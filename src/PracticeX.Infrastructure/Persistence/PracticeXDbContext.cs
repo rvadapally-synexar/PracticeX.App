@@ -104,9 +104,13 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.TenantId, x.SourceType, x.DisplayName });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.SourceType).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(40).IsRequired();
             entity.Property(x => x.DisplayName).HasMaxLength(240);
+            entity.Property(x => x.ConfigJson).HasColumnType("jsonb");
+            entity.Property(x => x.CredentialsJson).HasColumnType("jsonb");
+            entity.Property(x => x.LastError).HasColumnType("text");
         });
 
         modelBuilder.Entity<SourceObject>(entity =>
@@ -122,6 +126,10 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.Property(x => x.Name).HasMaxLength(512).IsRequired();
             entity.Property(x => x.MimeType).HasMaxLength(160).IsRequired();
             entity.Property(x => x.Sha256).HasMaxLength(64);
+            entity.Property(x => x.ObjectKind).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.RelativePath).HasMaxLength(1024);
+            entity.Property(x => x.ParentExternalId).HasMaxLength(512);
+            entity.Property(x => x.MetadataJson).HasColumnType("jsonb");
         });
     }
 
@@ -134,8 +142,10 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.HasIndex(x => new { x.TenantId, x.CreatedAt });
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<AppUser>().WithMany().HasForeignKey(x => x.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SourceConnection>().WithMany().HasForeignKey(x => x.SourceConnectionId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.SourceType).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Notes).HasColumnType("text");
         });
 
         modelBuilder.Entity<IngestionJob>(entity =>
@@ -148,6 +158,7 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.HasOne<SourceObject>().WithMany().HasForeignKey(x => x.SourceObjectId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<DocumentAsset>().WithMany().HasForeignKey(x => x.DocumentAssetId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.Status).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.Stage).HasMaxLength(40).IsRequired();
             entity.Property(x => x.ErrorCode).HasMaxLength(120);
         });
 
@@ -173,9 +184,14 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.HasOne<Tenant>().WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<DocumentAsset>().WithMany().HasForeignKey(x => x.DocumentAssetId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne<Facility>().WithMany().HasForeignKey(x => x.FacilityHintId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<SourceObject>().WithMany().HasForeignKey(x => x.SourceObjectId).OnDelete(DeleteBehavior.Restrict);
             entity.Property(x => x.CandidateType).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Confidence).HasPrecision(5, 4);
             entity.Property(x => x.Status).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.ReasonCodesJson).HasColumnType("jsonb");
+            entity.Property(x => x.ClassifierVersion).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.OriginFilename).HasMaxLength(512);
+            entity.Property(x => x.RelativePath).HasMaxLength(1024);
         });
     }
 
