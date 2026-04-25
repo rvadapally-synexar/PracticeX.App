@@ -1,0 +1,270 @@
+/*
+ * PracticeX design tokens — Roland Garros / clay-court palette per FCC_MOCK
+ * design handoff. Defaults to the operator (light) theme; dark variant flips
+ * tokens via [data-theme="dark"].
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif&family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+:root {
+  --px-bg: #f4efe2;
+  --px-surface: #fffbf0;
+  --px-surface-2: #efe8d4;
+
+  --px-ink: #1e2a1a;
+  --px-ink-2: #2f3e2a;
+  --px-ink-3: #5c6a54;
+  --px-ink-4: #8f9b85;
+
+  --px-line: #d9d0b8;
+  --px-line-2: #e4dcc5;
+
+  --px-orange: #c85a2e;
+  --px-orange-soft: #f5dccc;
+  --px-green: #2e5d3a;
+  --px-green-soft: #d3e3c8;
+  --px-warn: #b47a12;
+  --px-warn-soft: #f2e3bf;
+
+  --px-serif: 'Instrument Serif', Georgia, serif;
+  --px-sans: 'Inter', system-ui, sans-serif;
+  --px-mono: 'IBM Plex Mono', ui-monospace, monospace;
+
+  --px-radius: 6px;
+  --px-radius-lg: 10px;
+
+  --px-space-1: 4px;
+  --px-space-2: 8px;
+  --px-space-3: 12px;
+  --px-space-4: 16px;
+  --px-space-5: 24px;
+  --px-space-6: 32px;
+}
+
+[data-theme='dark'] {
+  --px-bg: #111110;
+  --px-surface: #1a1a18;
+  --px-surface-2: #181816;
+  --px-ink: #f2eee2;
+  --px-ink-2: #d7d2c2;
+  --px-ink-3: #a29d8b;
+  --px-ink-4: #6f6b5e;
+  --px-line: #2a2925;
+  --px-line-2: #242320;
+  --px-orange: #e07a3e;
+}
+
+html,
+body {
+  background: var(--px-bg);
+  color: var(--px-ink);
+  font-family: var(--px-sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+}
+
+.mono-label {
+  color: var(--px-ink-3);
+  font-family: var(--px-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.muted {
+  color: var(--px-ink-3);
+  font-size: 12.5px;
+}
+
+.px-card {
+  background: var(--px-surface);
+  border: 1px solid var(--px-line);
+  border-radius: var(--px-radius-lg);
+  padding: 18px;
+}
+
+.px-card-header {
+  align-items: baseline;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 14px;
+}
+
+.px-card-title {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+}
+
+.px-card-eyebrow {
+  color: var(--px-ink-3);
+  font-family: var(--px-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.px-button {
+  align-items: center;
+  background: var(--px-orange);
+  border: 1px solid var(--px-orange);
+  border-radius: var(--px-radius);
+  color: white;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 12.5px;
+  font-weight: 500;
+  gap: 6px;
+  height: 34px;
+  padding: 0 14px;
+  transition: filter 0.18s ease;
+}
+
+.px-button:hover {
+  filter: brightness(0.96);
+}
+
+.px-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.px-button.secondary {
+  background: var(--px-surface);
+  border-color: var(--px-line);
+  color: var(--px-ink);
+}
+
+.px-button.confirm {
+  background: var(--px-green);
+  border-color: var(--px-green);
+}
+
+.px-button.ghost {
+  background: transparent;
+  border-color: transparent;
+  color: var(--px-ink-2);
+}
+
+.px-icon-button {
+  align-items: center;
+  background: var(--px-surface);
+  border: 1px solid var(--px-line);
+  border-radius: var(--px-radius);
+  color: var(--px-ink);
+  cursor: pointer;
+  display: inline-flex;
+  height: 34px;
+  justify-content: center;
+  width: 34px;
+}
+
+.px-avatar {
+  align-items: center;
+  background: var(--px-green);
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  font-family: var(--px-mono);
+  font-size: 11px;
+  font-weight: 600;
+  height: 30px;
+  justify-content: center;
+  width: 30px;
+}
+
+.px-status-chip {
+  align-items: center;
+  border-radius: 999px;
+  display: inline-flex;
+  font-family: var(--px-mono);
+  font-size: 10px;
+  font-weight: 500;
+  gap: 6px;
+  letter-spacing: 0.06em;
+  padding: 3px 9px;
+  text-transform: uppercase;
+}
+
+.px-status-chip.ok {
+  background: var(--px-green-soft);
+  color: var(--px-green);
+}
+.px-status-chip.accent {
+  background: var(--px-orange-soft);
+  color: var(--px-orange);
+}
+.px-status-chip.warn {
+  background: var(--px-warn-soft);
+  color: var(--px-warn);
+}
+.px-status-chip.muted {
+  background: var(--px-surface-2);
+  color: var(--px-ink-3);
+}
+
+.px-kpi-card {
+  background: var(--px-surface);
+  border: 1px solid var(--px-line);
+  border-radius: var(--px-radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 18px;
+}
+
+.px-kpi-card .px-kpi-label {
+  color: var(--px-ink-3);
+  font-family: var(--px-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.px-kpi-card .px-kpi-value {
+  font-family: var(--px-serif);
+  font-size: 30px;
+  line-height: 1.05;
+}
+
+.px-kpi-card .px-kpi-helper {
+  color: var(--px-ink-3);
+  font-size: 12px;
+}
+
+.px-kpi-card.accent .px-kpi-value {
+  color: var(--px-orange);
+}
+.px-kpi-card.warn .px-kpi-value {
+  color: var(--px-warn);
+}
+
+.px-confidence-bar {
+  background: var(--px-surface-2);
+  border-radius: 999px;
+  height: 6px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.px-confidence-bar .fill {
+  background: var(--px-green);
+  height: 100%;
+}
+.px-confidence-bar.accent .fill {
+  background: var(--px-orange);
+}
+.px-confidence-bar.warn .fill {
+  background: var(--px-warn);
+}
+
+kbd {
+  background: var(--px-surface-2);
+  border: 1px solid var(--px-line);
+  border-radius: 4px;
+  font-family: var(--px-mono);
+  font-size: 10px;
+  padding: 1px 5px;
+}
