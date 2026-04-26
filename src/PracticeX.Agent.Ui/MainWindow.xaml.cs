@@ -478,6 +478,7 @@ public partial class MainWindow : Window
         // Web UI lives at the same host on the Vite dev port (5173) in dev,
         // or behind the API host in production. We open the dev port by default
         // and fall back to the API host if launching the dev URL fails.
+        // Vite dev server. Adjust here if you serve the web UI on a different port.
         var devUiUrl = "http://localhost:5173/source-discovery";
         try
         {
