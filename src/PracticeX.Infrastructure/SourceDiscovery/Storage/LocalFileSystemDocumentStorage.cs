@@ -23,7 +23,10 @@ public sealed class LocalFileSystemDocumentStorage(IOptions<DocumentStorageOptio
 
     public async Task<StoredDocument> StoreAsync(Guid tenantId, string suggestedName, Stream content, string mimeType, CancellationToken cancellationToken)
     {
-        var tenantRoot = Path.Combine(_options.RootPath, tenantId.ToString("N"));
+        // Resolve to an absolute path so Uri construction below works whether the
+        // configured RootPath is relative ("./var/...") or absolute.
+        var rootAbsolute = Path.GetFullPath(_options.RootPath);
+        var tenantRoot = Path.Combine(rootAbsolute, tenantId.ToString("N"));
         Directory.CreateDirectory(tenantRoot);
 
         using var memory = new MemoryStream();

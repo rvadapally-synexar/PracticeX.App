@@ -371,8 +371,10 @@ public sealed class IngestionOrchestrator(
             scored.Add(await ScoreManifestItemAsync(request, batch.Id, item, cancellationToken));
         }
 
-        batch.CandidateCount = scored.Count(s => s.RecommendedAction != ManifestRecommendedActions.Skip);
-        batch.SkippedCount = scored.Count(s => s.RecommendedAction == ManifestRecommendedActions.Skip);
+        // Manifest pre-scoring populates `notes` with a summary; CandidateCount /
+        // SkippedCount stay at 0 because no document_candidates have been created
+        // yet. Those counters increment only when bundle ingestion runs.
+        batch.Notes = $"manifest:scored={scored.Count} eligible={scored.Count(s => s.RecommendedAction != ManifestRecommendedActions.Skip)} skipped={scored.Count(s => s.RecommendedAction == ManifestRecommendedActions.Skip)}";
         batch.UpdatedAt = clock.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken);
 
