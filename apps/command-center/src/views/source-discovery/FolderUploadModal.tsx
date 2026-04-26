@@ -1,11 +1,7 @@
 import { Button } from '@practicex/design-system';
 import { FolderUp, Upload, X } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
-
-interface QueuedFile {
-  file: File;
-  relativePath: string;
-}
+import { readFileList, walkDataTransfer, type QueuedFile } from '../../lib/folder-traverse';
 
 export function FolderUploadModal({
   onClose,
@@ -22,42 +18,21 @@ export function FolderUploadModal({
   const folderInputRef = useRef<HTMLInputElement>(null);
 
   const addFiles = useCallback((fileList: FileList | null) => {
-    if (!fileList) return;
-    const next: QueuedFile[] = [];
-    for (let i = 0; i < fileList.length; i++) {
-      const f = fileList.item(i);
-      if (!f) continue;
-      const relativePath = (f as File & { webkitRelativePath?: string }).webkitRelativePath || f.name;
-      next.push({ file: f, relativePath });
-    }
+    const next = readFileList(fileList);
+    if (next.length === 0) return;
     setFiles((prev) => [...prev, ...next]);
   }, []);
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
-      const items = event.dataTransfer?.items;
-      if (!items) {
-        addFiles(event.dataTransfer?.files ?? null);
-        return;
-      }
-      const collected: QueuedFile[] = [];
-      const walkers: Promise<void>[] = [];
-      for (let i = 0; i < items.length; i++) {
-        const entry = (items[i] as DataTransferItem & { webkitGetAsEntry?: () => FileSystemEntry | null }).webkitGetAsEntry?.();
-        if (entry) {
-          walkers.push(traverseEntry(entry, '', collected));
-        }
-      }
-      void Promise.all(walkers).then(() => {
-        if (collected.length === 0) {
-          addFiles(event.dataTransfer?.files ?? null);
-        } else {
+      void walkDataTransfer(event.dataTransfer).then((collected) => {
+        if (collected.length > 0) {
           setFiles((prev) => [...prev, ...collected]);
         }
       });
     },
-    [addFiles],
+    [],
   );
 
   const handleSubmit = useCallback(async () => {
@@ -247,22 +222,3 @@ export function FolderUploadModal({
   );
 }
 
-async function traverseEntry(entry: FileSystemEntry, prefix: string, collected: QueuedFile[]): Promise<void> {
-  if (entry.isFile) {
-    const file = await new Promise<File>((resolve, reject) => {
-      (entry as FileSystemFileEntry).file(resolve, reject);
-    });
-    collected.push({ file, relativePath: prefix ? `${prefix}/${file.name}` : file.name });
-    return;
-  }
-  if (entry.isDirectory) {
-    const dir = entry as FileSystemDirectoryEntry;
-    const reader = dir.createReader();
-    const entries = await new Promise<FileSystemEntry[]>((resolve, reject) => {
-      reader.readEntries(resolve, reject);
-    });
-    await Promise.all(
-      entries.map((child) => traverseEntry(child, prefix ? `${prefix}/${entry.name}` : entry.name, collected)),
-    );
-  }
-}

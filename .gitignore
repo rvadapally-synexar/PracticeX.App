@@ -498,3 +498,6 @@ docs/New Text Document.txt
 *.pat
 *.token
 push-to-rvadapally.bat
+
+# Local document storage (LocalFileSystemDocumentStorage default root)
+src/PracticeX.Api/var/

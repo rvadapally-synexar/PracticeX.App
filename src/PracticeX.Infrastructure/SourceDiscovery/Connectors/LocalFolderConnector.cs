@@ -58,7 +58,9 @@ public sealed class LocalFolderConnector : ISourceConnector
 
             items.Add(new DiscoveredItem
             {
-                ExternalId = $"{relativePath ?? input.Name}|{sha}",
+                ExternalId = !string.IsNullOrEmpty(input.ExternalIdHint)
+                    ? input.ExternalIdHint
+                    : $"{relativePath ?? input.Name}|{sha}",
                 Name = Path.GetFileName(input.Name),
                 MimeType = string.IsNullOrWhiteSpace(input.MimeType) ? "application/octet-stream" : input.MimeType,
                 RelativePath = relativePath,

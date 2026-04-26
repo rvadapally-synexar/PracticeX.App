@@ -130,6 +130,8 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.Property(x => x.RelativePath).HasMaxLength(1024);
             entity.Property(x => x.ParentExternalId).HasMaxLength(512);
             entity.Property(x => x.MetadataJson).HasColumnType("jsonb");
+            entity.Property(x => x.ProposedStatus).HasMaxLength(40);
+            entity.Property(x => x.QuickFingerprint).HasMaxLength(96);
         });
     }
 
@@ -146,6 +148,7 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.Property(x => x.SourceType).HasMaxLength(80).IsRequired();
             entity.Property(x => x.Status).HasMaxLength(40).IsRequired();
             entity.Property(x => x.Notes).HasColumnType("text");
+            entity.Property(x => x.Phase).HasMaxLength(40).IsRequired();
         });
 
         modelBuilder.Entity<IngestionJob>(entity =>
@@ -174,6 +177,8 @@ public sealed class PracticeXDbContext(DbContextOptions<PracticeXDbContext> opti
             entity.Property(x => x.MimeType).HasMaxLength(160).IsRequired();
             entity.Property(x => x.TextStatus).HasMaxLength(40).IsRequired();
             entity.Property(x => x.OcrStatus).HasMaxLength(40).IsRequired();
+            entity.Property(x => x.ExtractionRoute).HasMaxLength(40);
+            entity.Property(x => x.ValidityStatus).HasMaxLength(40);
         });
 
         modelBuilder.Entity<DocumentCandidate>(entity =>

@@ -19,6 +19,16 @@ public sealed class SourceObject : Entity
     public string? ParentExternalId { get; set; }
     public long? SizeBytes { get; set; }
     public string? MetadataJson { get; set; }
+    public string? ProposedStatus { get; set; }
+    public string? QuickFingerprint { get; set; }
+}
+
+public static class SourceObjectProposedStatuses
+{
+    public const string Proposed = "proposed";
+    public const string Selected = "selected";
+    public const string Skipped = "skipped";
+    public const string Uploaded = "uploaded";
 }
 
 public static class SourceObjectKinds

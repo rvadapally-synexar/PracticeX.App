@@ -20,7 +20,7 @@ import type {
   ConnectorDescriptor,
 } from '../lib/api';
 import { readableCandidateType, readableReason, sourcesApi } from '../lib/api';
-import { FolderUploadModal } from './source-discovery/FolderUploadModal';
+import { FolderInventoryWorkflow } from './source-discovery/FolderInventoryWorkflow';
 
 type SourceState = {
   connectors: ConnectorDescriptor[];
@@ -93,15 +93,12 @@ export function SourceDiscoveryPage() {
     [state.connections],
   );
 
-  const handleFolderUpload = useCallback(
-    async (files: { file: File; relativePath: string }[], notes?: string) => {
-      const conn = await ensureConnection('local_folder', 'Local folder upload');
-      const summary = await sourcesApi.uploadFolder(conn.id, files, notes);
-      setActiveBatch(summary);
-      await refresh();
-    },
-    [ensureConnection, refresh],
-  );
+  const [folderConnId, setFolderConnId] = useState<string | null>(null);
+  const openFolderWorkflow = useCallback(async () => {
+    const conn = await ensureConnection('local_folder', 'Local folder upload');
+    setFolderConnId(conn.id);
+    setUploadOpen(true);
+  }, [ensureConnection]);
 
   const handleConnectOutlook = useCallback(async () => {
     setActionInflight('outlook_connect');
@@ -199,7 +196,7 @@ export function SourceDiscoveryPage() {
           <Button variant="secondary" onClick={() => void refresh()} disabled={state.loading}>
             <RefreshCcw size={14} /> Refresh
           </Button>
-          <Button onClick={() => setUploadOpen(true)}>
+          <Button onClick={() => void openFolderWorkflow()}>
             <Upload size={14} /> Upload folder
           </Button>
         </div>
@@ -360,12 +357,13 @@ export function SourceDiscoveryPage() {
         </Card>
       </section>
 
-      {uploadOpen ? (
-        <FolderUploadModal
+      {uploadOpen && folderConnId ? (
+        <FolderInventoryWorkflow
+          connectionId={folderConnId}
           onClose={() => setUploadOpen(false)}
-          onUpload={async (files, notes) => {
-            await handleFolderUpload(files, notes);
-            setUploadOpen(false);
+          onComplete={async (summary) => {
+            setActiveBatch(summary);
+            await refresh();
           }}
         />
       ) : null}

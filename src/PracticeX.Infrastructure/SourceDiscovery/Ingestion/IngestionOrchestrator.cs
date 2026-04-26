@@ -6,6 +6,7 @@ using PracticeX.Application.SourceDiscovery.Classification;
 using PracticeX.Application.SourceDiscovery.Connectors;
 using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Storage;
+using PracticeX.Application.SourceDiscovery.Validation;
 using PracticeX.Domain.Audit;
 using PracticeX.Domain.Documents;
 using PracticeX.Domain.Sources;
@@ -27,9 +28,11 @@ public sealed class IngestionOrchestrator(
     PracticeXDbContext dbContext,
     IDocumentStorage storage,
     IDocumentClassifier classifier,
+    IDocumentValidityInspector validityInspector,
     IClock clock,
     ILogger<IngestionOrchestrator> logger) : IIngestionOrchestrator
 {
+    public const string ManifestExternalIdPrefix = "manifest:";
     public async Task<Result<IngestionBatchSummary>> IngestAsync(
         IngestionRequest request,
         DiscoveryResult discovery,
@@ -44,6 +47,7 @@ public sealed class IngestionOrchestrator(
             SourceConnectionId = request.ConnectionId,
             CreatedByUserId = request.InitiatedByUserId,
             Status = IngestionBatchStatus.Running,
+            Phase = IngestionBatchPhase.Complete,
             FileCount = discovery.Items.Count,
             StartedAt = now,
             Notes = request.Notes,
@@ -193,6 +197,7 @@ public sealed class IngestionOrchestrator(
 
         DocumentAsset asset;
         bool isDuplicate;
+        ValidityReport? validity = null;
         if (existingAsset is not null)
         {
             asset = existingAsset;
@@ -200,6 +205,7 @@ public sealed class IngestionOrchestrator(
         }
         else
         {
+            validity = validityInspector.Inspect(item.InlineContent, item.MimeType, item.Name);
             asset = new DocumentAsset
             {
                 TenantId = request.TenantId,
@@ -210,6 +216,11 @@ public sealed class IngestionOrchestrator(
                 SizeBytes = stored.SizeBytes,
                 TextStatus = "pending",
                 OcrStatus = "pending",
+                ValidityStatus = validity.ValidityStatus,
+                PageCount = validity.PageCount,
+                HasTextLayer = validity.HasTextLayer,
+                IsEncrypted = validity.IsEncrypted,
+                ExtractionRoute = validity.ExtractionRoute,
                 CreatedAt = clock.UtcNow
             };
             dbContext.DocumentAssets.Add(asset);
@@ -229,7 +240,9 @@ public sealed class IngestionOrchestrator(
 
         var reasonCodes = isDuplicate
             ? classification.ReasonCodes.Append(IngestionReasonCodes.DuplicateContent).ToList()
-            : classification.ReasonCodes.ToList();
+            : (validity is null
+                ? classification.ReasonCodes.ToList()
+                : classification.ReasonCodes.Concat(validity.ReasonCodes).ToList());
 
         var candidateStatus = isDuplicate
             ? DocumentCandidateStatus.Skipped
@@ -313,5 +326,298 @@ public sealed class IngestionOrchestrator(
             Status = candidateStatus,
             RelativePath = item.RelativePath
         };
+    }
+
+    public async Task<Result<ManifestScanResult>> ScoreManifestAsync(
+        IngestionRequest request,
+        IReadOnlyList<ManifestItem> items,
+        CancellationToken cancellationToken)
+    {
+        var now = clock.UtcNow;
+
+        var batch = new IngestionBatch
+        {
+            TenantId = request.TenantId,
+            SourceType = request.SourceType,
+            SourceConnectionId = request.ConnectionId,
+            CreatedByUserId = request.InitiatedByUserId,
+            Status = IngestionBatchStatus.Running,
+            Phase = IngestionBatchPhase.Manifest,
+            FileCount = items.Count,
+            StartedAt = now,
+            Notes = request.Notes,
+            CreatedAt = now
+        };
+        dbContext.IngestionBatches.Add(batch);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        dbContext.AuditEvents.Add(new AuditEvent
+        {
+            TenantId = request.TenantId,
+            ActorType = "user",
+            ActorId = request.InitiatedByUserId,
+            EventType = "ingestion.manifest.created",
+            ResourceType = "ingestion_batch",
+            ResourceId = batch.Id,
+            MetadataJson = JsonSerializer.Serialize(new { itemCount = items.Count, sourceType = request.SourceType }),
+            CreatedAt = now
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var scored = new List<ManifestScoredItem>(items.Count);
+        foreach (var item in items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            scored.Add(await ScoreManifestItemAsync(request, batch.Id, item, cancellationToken));
+        }
+
+        batch.CandidateCount = scored.Count(s => s.RecommendedAction != ManifestRecommendedActions.Skip);
+        batch.SkippedCount = scored.Count(s => s.RecommendedAction == ManifestRecommendedActions.Skip);
+        batch.UpdatedAt = clock.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<ManifestScanResult>.Ok(new ManifestScanResult
+        {
+            BatchId = batch.Id,
+            Phase = IngestionBatchPhase.Manifest,
+            Items = scored
+        });
+    }
+
+    public async Task<Result<IngestionBatchSummary>> IngestBundleAsync(
+        IngestionRequest request,
+        Guid manifestBatchId,
+        DiscoveryResult discovery,
+        CancellationToken cancellationToken)
+    {
+        var batch = await dbContext.IngestionBatches.FirstOrDefaultAsync(
+            x => x.Id == manifestBatchId && x.TenantId == request.TenantId, cancellationToken);
+
+        if (batch is null)
+        {
+            return Result<IngestionBatchSummary>.Fail("manifest_batch_not_found",
+                $"No manifest batch {manifestBatchId} for this tenant.");
+        }
+
+        if (batch.Phase == IngestionBatchPhase.Complete)
+        {
+            return Result<IngestionBatchSummary>.Fail("manifest_already_complete",
+                "Manifest batch is already complete; start a new scan.");
+        }
+
+        batch.Phase = IngestionBatchPhase.Bundle;
+        batch.Status = IngestionBatchStatus.Running;
+        batch.UpdatedAt = clock.UtcNow;
+
+        dbContext.AuditEvents.Add(new AuditEvent
+        {
+            TenantId = request.TenantId,
+            ActorType = "user",
+            ActorId = request.InitiatedByUserId,
+            EventType = "ingestion.bundle.received",
+            ResourceType = "ingestion_batch",
+            ResourceId = batch.Id,
+            MetadataJson = JsonSerializer.Serialize(new { fileCount = discovery.Items.Count }),
+            CreatedAt = clock.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var summaries = new List<IngestionItemSummary>(discovery.Items.Count);
+        var candidateCount = 0;
+        var skippedCount = 0;
+        var errorCount = 0;
+
+        foreach (var item in discovery.Items)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var result = await IngestItemAsync(request, batch.Id, item, cancellationToken);
+                summaries.Add(result);
+
+                // Mark the source_object as uploaded so subsequent manifest scans
+                // can show "already processed" state.
+                var so = await dbContext.SourceObjects.FirstOrDefaultAsync(
+                    x => x.Id == result.SourceObjectId, cancellationToken);
+                if (so is not null)
+                {
+                    so.ProposedStatus = SourceObjectProposedStatuses.Uploaded;
+                    so.UpdatedAt = clock.UtcNow;
+                }
+
+                switch (result.Status)
+                {
+                    case DocumentCandidateStatus.Skipped:
+                        skippedCount++;
+                        break;
+                    case "error":
+                        errorCount++;
+                        break;
+                    default:
+                        candidateCount++;
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to ingest bundle item {External} for batch {Batch}", item.ExternalId, batch.Id);
+                errorCount++;
+            }
+        }
+
+        // Counts are additive over the manifest scan because some manifest items
+        // may not have been uploaded (user pruned them). FileCount stays at
+        // manifest size; CandidateCount/SkippedCount accumulate.
+        batch.CandidateCount += candidateCount;
+        batch.SkippedCount += skippedCount;
+        batch.ErrorCount += errorCount;
+        batch.CompletedAt = clock.UtcNow;
+        batch.Phase = IngestionBatchPhase.Complete;
+        batch.Status = errorCount > 0
+            ? (candidateCount > 0 ? IngestionBatchStatus.PartialSuccess : IngestionBatchStatus.Failed)
+            : IngestionBatchStatus.Completed;
+        batch.UpdatedAt = clock.UtcNow;
+
+        dbContext.AuditEvents.Add(new AuditEvent
+        {
+            TenantId = request.TenantId,
+            ActorType = "user",
+            ActorId = request.InitiatedByUserId,
+            EventType = "ingestion.bundle.completed",
+            ResourceType = "ingestion_batch",
+            ResourceId = batch.Id,
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                uploadedCount = discovery.Items.Count,
+                candidateCount,
+                skippedCount,
+                errorCount
+            }),
+            CreatedAt = clock.UtcNow
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Result<IngestionBatchSummary>.Ok(new IngestionBatchSummary
+        {
+            BatchId = batch.Id,
+            FileCount = batch.FileCount,
+            CandidateCount = batch.CandidateCount,
+            SkippedCount = batch.SkippedCount,
+            ErrorCount = batch.ErrorCount,
+            Status = batch.Status,
+            Items = summaries
+        });
+    }
+
+    private async Task<ManifestScoredItem> ScoreManifestItemAsync(
+        IngestionRequest request,
+        Guid batchId,
+        ManifestItem item,
+        CancellationToken cancellationToken)
+    {
+        var folderHint = ExtractFolderHint(item.RelativePath);
+        var classification = classifier.Classify(new ClassificationInput
+        {
+            FileName = item.Name,
+            RelativePath = item.RelativePath,
+            MimeType = item.MimeType ?? "application/octet-stream",
+            SizeBytes = item.SizeBytes,
+            FolderHint = folderHint,
+            Hints = []
+        });
+
+        var manifestItemId = BuildManifestExternalId(item);
+
+        var sourceObject = await dbContext.SourceObjects.FirstOrDefaultAsync(
+            x => x.ConnectionId == request.ConnectionId && x.ExternalId == manifestItemId,
+            cancellationToken);
+
+        var manifestMetadata = JsonSerializer.Serialize(new
+        {
+            manifest = new
+            {
+                score = new
+                {
+                    candidateType = classification.CandidateType,
+                    confidence = classification.Confidence,
+                    reasonCodes = classification.ReasonCodes,
+                    counterpartyHint = classification.CounterpartyHint
+                },
+                lastModifiedUtc = item.LastModifiedUtc,
+                browserMimeType = item.MimeType,
+                folderHint
+            }
+        });
+
+        if (sourceObject is null)
+        {
+            sourceObject = new SourceObject
+            {
+                TenantId = request.TenantId,
+                ConnectionId = request.ConnectionId,
+                ExternalId = manifestItemId,
+                Uri = $"manifest:{item.RelativePath}",
+                Name = item.Name,
+                MimeType = item.MimeType ?? "application/octet-stream",
+                ObjectKind = SourceObjectKinds.File,
+                RelativePath = item.RelativePath,
+                ParentExternalId = folderHint,
+                SizeBytes = item.SizeBytes,
+                ProposedStatus = SourceObjectProposedStatuses.Proposed,
+                MetadataJson = manifestMetadata,
+                SourceModifiedAt = item.LastModifiedUtc,
+                CreatedAt = clock.UtcNow
+            };
+            dbContext.SourceObjects.Add(sourceObject);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+        else
+        {
+            sourceObject.ProposedStatus = SourceObjectProposedStatuses.Proposed;
+            sourceObject.SizeBytes = item.SizeBytes;
+            sourceObject.SourceModifiedAt = item.LastModifiedUtc;
+            sourceObject.MetadataJson = manifestMetadata;
+            sourceObject.UpdatedAt = clock.UtcNow;
+        }
+
+        dbContext.IngestionJobs.Add(new IngestionJob
+        {
+            TenantId = request.TenantId,
+            BatchId = batchId,
+            SourceObjectId = sourceObject.Id,
+            DocumentAssetId = null,
+            Status = IngestionJobStatus.Queued,
+            Stage = IngestionStage.Discovered,
+            AttemptCount = 1,
+            CreatedAt = clock.UtcNow
+        });
+
+        return new ManifestScoredItem
+        {
+            ManifestItemId = manifestItemId,
+            RelativePath = item.RelativePath,
+            Name = item.Name,
+            SizeBytes = item.SizeBytes,
+            CandidateType = classification.CandidateType,
+            Confidence = classification.Confidence,
+            ReasonCodes = classification.ReasonCodes,
+            RecommendedAction = ManifestBands.RecommendedAction(classification.Confidence),
+            Band = ManifestBands.From(classification.Confidence),
+            CounterpartyHint = classification.CounterpartyHint
+        };
+    }
+
+    public static string BuildManifestExternalId(ManifestItem item) =>
+        ManifestExternalIdPrefix + item.RelativePath + "|" + item.SizeBytes + "|" + item.LastModifiedUtc.ToUnixTimeSeconds();
+
+    private static string? ExtractFolderHint(string? relativePath)
+    {
+        if (string.IsNullOrEmpty(relativePath))
+        {
+            return null;
+        }
+        var normalized = relativePath.Replace('\\', '/');
+        var lastSlash = normalized.LastIndexOf('/');
+        return lastSlash <= 0 ? null : normalized[..lastSlash];
     }
 }

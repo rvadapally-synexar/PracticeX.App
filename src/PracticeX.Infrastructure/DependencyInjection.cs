@@ -7,11 +7,13 @@ using PracticeX.Application.SourceDiscovery.Connectors;
 using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Outlook;
 using PracticeX.Application.SourceDiscovery.Storage;
+using PracticeX.Application.SourceDiscovery.Validation;
 using PracticeX.Infrastructure.Persistence;
 using PracticeX.Infrastructure.SourceDiscovery.Connectors;
 using PracticeX.Infrastructure.SourceDiscovery.Ingestion;
 using PracticeX.Infrastructure.SourceDiscovery.Outlook;
 using PracticeX.Infrastructure.SourceDiscovery.Storage;
+using PracticeX.Infrastructure.SourceDiscovery.Validation;
 using PracticeX.Infrastructure.Tenancy;
 
 namespace PracticeX.Infrastructure;
@@ -36,6 +38,7 @@ public static class DependencyInjection
         services.Configure<MicrosoftGraphOptions>(configuration.GetSection(MicrosoftGraphOptions.SectionName));
 
         services.AddSingleton<IDocumentClassifier, RuleBasedContractClassifier>();
+        services.AddSingleton<IDocumentValidityInspector, BasicDocumentValidityInspector>();
         services.AddSingleton<IDocumentStorage, LocalFileSystemDocumentStorage>();
         services.AddSingleton<IMicrosoftGraphTokenStore, InMemoryMicrosoftGraphTokenStore>();
 

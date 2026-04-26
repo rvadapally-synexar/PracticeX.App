@@ -23,4 +23,11 @@ public sealed class DiscoveryInput
     public required string MimeType { get; init; }
     public required Stream Content { get; init; }
     public long? SizeBytes { get; init; }
+
+    /// <summary>
+    /// Optional ExternalId override. When the bundle endpoint replays files
+    /// previously scored in a manifest, it passes the manifestItemId so the
+    /// resulting DiscoveredItem matches the existing source_object record.
+    /// </summary>
+    public string? ExternalIdHint { get; init; }
 }

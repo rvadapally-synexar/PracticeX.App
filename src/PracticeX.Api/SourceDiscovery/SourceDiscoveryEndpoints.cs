@@ -35,6 +35,8 @@ public static class SourceDiscoveryEndpoints
         group.MapDelete("/connections/{connectionId:guid}", DeleteConnection);
 
         group.MapPost("/connections/{connectionId:guid}/folder/scan", ScanFolderUpload).DisableAntiforgery();
+        group.MapPost("/connections/{connectionId:guid}/folder/manifest", ScoreFolderManifest);
+        group.MapPost("/connections/{connectionId:guid}/folder/bundles", IngestFolderBundle).DisableAntiforgery();
 
         group.MapGet("/connections/{connectionId:guid}/outlook/oauth/start", StartOutlookOAuth);
         group.MapGet("/outlook/oauth/callback", HandleOutlookOAuthCallback);
@@ -248,6 +250,229 @@ public static class SourceDiscoveryEndpoints
                 SourceType = SourceTypes.LocalFolder,
                 Notes = form.TryGetValue("notes", out var notes) ? notes.ToString() : null
             }, discovery.Value!, cancellationToken);
+
+            if (!ingest.IsSuccess)
+            {
+                return TypedResults.BadRequest(new ProblemDetails
+                {
+                    Title = ingest.Error?.Code ?? "ingest_failed",
+                    Detail = ingest.Error?.Message
+                });
+            }
+
+            connection.LastSyncAt = DateTimeOffset.UtcNow;
+            connection.UpdatedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(cancellationToken);
+
+            var summary = ingest.Value!;
+            return TypedResults.Ok(new IngestionBatchSummaryDto(
+                BatchId: summary.BatchId,
+                FileCount: summary.FileCount,
+                CandidateCount: summary.CandidateCount,
+                SkippedCount: summary.SkippedCount,
+                ErrorCount: summary.ErrorCount,
+                Status: summary.Status,
+                Items: summary.Items.Select(MapItem).ToList()));
+        }
+        finally
+        {
+            foreach (var s in openedStreams)
+            {
+                await s.DisposeAsync();
+            }
+        }
+    }
+
+    private static async Task<Results<Ok<ManifestScanResponse>, BadRequest<ProblemDetails>, NotFound>> ScoreFolderManifest(
+        Guid connectionId,
+        [FromBody] ManifestScanRequest request,
+        PracticeXDbContext db,
+        IIngestionOrchestrator orchestrator,
+        ICurrentUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var connection = await db.SourceConnections
+            .FirstOrDefaultAsync(c => c.Id == connectionId && c.TenantId == userContext.TenantId, cancellationToken);
+        if (connection is null)
+        {
+            return TypedResults.NotFound();
+        }
+        if (connection.SourceType != SourceTypes.LocalFolder)
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "Wrong connector",
+                Detail = $"Connection {connectionId} is not a local_folder connection."
+            });
+        }
+        if (request.Items is null || request.Items.Count == 0)
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "Empty manifest",
+                Detail = "At least one manifest item is required."
+            });
+        }
+
+        var items = request.Items
+            .Select(i => new ManifestItem
+            {
+                RelativePath = i.RelativePath,
+                Name = i.Name,
+                SizeBytes = i.SizeBytes,
+                LastModifiedUtc = i.LastModifiedUtc,
+                MimeType = i.MimeType
+            })
+            .ToList();
+
+        var result = await orchestrator.ScoreManifestAsync(new IngestionRequest
+        {
+            TenantId = userContext.TenantId,
+            InitiatedByUserId = userContext.UserId,
+            ConnectionId = connection.Id,
+            SourceType = SourceTypes.LocalFolder,
+            Notes = request.Notes
+        }, items, cancellationToken);
+
+        if (!result.IsSuccess)
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = result.Error?.Code ?? "manifest_failed",
+                Detail = result.Error?.Message
+            });
+        }
+
+        var scored = result.Value!;
+        var dtoItems = scored.Items.Select(i => new ManifestScoredItemDto(
+            ManifestItemId: i.ManifestItemId,
+            RelativePath: i.RelativePath,
+            Name: i.Name,
+            SizeBytes: i.SizeBytes,
+            CandidateType: i.CandidateType,
+            Confidence: i.Confidence,
+            ReasonCodes: i.ReasonCodes,
+            RecommendedAction: i.RecommendedAction,
+            Band: i.Band,
+            CounterpartyHint: i.CounterpartyHint
+        )).ToList();
+
+        return TypedResults.Ok(new ManifestScanResponse(
+            BatchId: scored.BatchId,
+            Phase: scored.Phase,
+            TotalItems: dtoItems.Count,
+            StrongCount: dtoItems.Count(i => i.Band == ManifestBands.Strong),
+            LikelyCount: dtoItems.Count(i => i.Band == ManifestBands.Likely),
+            PossibleCount: dtoItems.Count(i => i.Band == ManifestBands.Possible),
+            SkippedCount: dtoItems.Count(i => i.Band == ManifestBands.Skipped),
+            Items: dtoItems));
+    }
+
+    private static async Task<Results<Ok<IngestionBatchSummaryDto>, BadRequest<ProblemDetails>, NotFound>> IngestFolderBundle(
+        Guid connectionId,
+        [FromQuery] Guid batchId,
+        HttpRequest httpRequest,
+        PracticeXDbContext db,
+        IConnectorRegistry registry,
+        IIngestionOrchestrator orchestrator,
+        ICurrentUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var connection = await db.SourceConnections
+            .FirstOrDefaultAsync(c => c.Id == connectionId && c.TenantId == userContext.TenantId, cancellationToken);
+        if (connection is null)
+        {
+            return TypedResults.NotFound();
+        }
+        if (connection.SourceType != SourceTypes.LocalFolder)
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "Wrong connector",
+                Detail = $"Connection {connectionId} is not a local_folder connection."
+            });
+        }
+
+        if (!httpRequest.HasFormContentType)
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "Multipart required",
+                Detail = "Bundle upload requires multipart/form-data."
+            });
+        }
+
+        var form = await httpRequest.ReadFormAsync(cancellationToken);
+        var files = form.Files;
+        if (files.Count == 0)
+        {
+            return TypedResults.BadRequest(new ProblemDetails
+            {
+                Title = "No files",
+                Detail = "Bundle must include at least one selected file."
+            });
+        }
+
+        var inputs = new List<DiscoveryInput>(files.Count);
+        var openedStreams = new List<Stream>();
+        try
+        {
+            for (var i = 0; i < files.Count; i++)
+            {
+                var file = files[i];
+                if (file.Length == 0)
+                {
+                    continue;
+                }
+                var stream = file.OpenReadStream();
+                openedStreams.Add(stream);
+
+                var relativePath = form.TryGetValue($"paths[{i}]", out var pathValue) && pathValue.Count > 0
+                    ? pathValue[0]
+                    : file.FileName;
+                var manifestItemId = form.TryGetValue($"manifestItemIds[{i}]", out var midValue) && midValue.Count > 0
+                    ? midValue[0]
+                    : null;
+
+                inputs.Add(new DiscoveryInput
+                {
+                    Name = Path.GetFileName(file.FileName),
+                    RelativePath = relativePath,
+                    MimeType = string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType,
+                    Content = stream,
+                    SizeBytes = file.Length,
+                    ExternalIdHint = manifestItemId
+                });
+            }
+
+            var connector = registry.Resolve(SourceTypes.LocalFolder)
+                ?? throw new InvalidOperationException("Local folder connector not registered.");
+
+            var discovery = await connector.DiscoverAsync(new DiscoveryRequest
+            {
+                TenantId = userContext.TenantId,
+                ConnectionId = connection.Id,
+                InitiatedByUserId = userContext.UserId,
+                Inputs = inputs
+            }, cancellationToken);
+
+            if (!discovery.IsSuccess)
+            {
+                return TypedResults.BadRequest(new ProblemDetails
+                {
+                    Title = discovery.Error?.Code ?? "discovery_failed",
+                    Detail = discovery.Error?.Message
+                });
+            }
+
+            var ingest = await orchestrator.IngestBundleAsync(new IngestionRequest
+            {
+                TenantId = userContext.TenantId,
+                InitiatedByUserId = userContext.UserId,
+                ConnectionId = connection.Id,
+                SourceType = SourceTypes.LocalFolder,
+                Notes = form.TryGetValue("notes", out var notes) ? notes.ToString() : null
+            }, batchId, discovery.Value!, cancellationToken);
 
             if (!ingest.IsSuccess)
             {

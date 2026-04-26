@@ -16,6 +16,7 @@ public sealed class IngestionBatch : Entity
     public string? Notes { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
+    public string Phase { get; set; } = IngestionBatchPhase.Complete;
 }
 
 public static class IngestionBatchStatus
@@ -25,4 +26,11 @@ public static class IngestionBatchStatus
     public const string Completed = "completed";
     public const string Failed = "failed";
     public const string PartialSuccess = "partial_success";
+}
+
+public static class IngestionBatchPhase
+{
+    public const string Manifest = "manifest";
+    public const string Bundle = "bundle";
+    public const string Complete = "complete";
 }

@@ -1,0 +1,1692 @@
+I’ll connect through the GitHub connector rather than opening the URL in a browser, then verify I can see the repository metadata before doing anything else.
+
+
+
+
+GitHub is connected in this workspace via the preconfigured GitHub CLI, so I’m going to verify repository access without reading the code or changing anything.
+
+
+
+
+Connected and verified access to your repo.
+
+Details:
+
+Repository: rvadapally/PracticeX.App
+
+Visibility: public
+
+Default branch: main
+
+Owner: rvadapally
+
+I also saved this repo association so next time you can refer to “my PracticeX.App repo” and I’ll know which GitHub repository you mean.
+
+Great. I think in the documents there you'll see the architectural decisions made and all actually. create the Two connectors, which I am calling the crawlers, are contract discovery. It will go through and identify all the files that are looking like contracts or anything with renewal dates or anything of importance. I think you can go through the documents And ask me if you have any questions about the application. And I am going to attach some file for the business context also.
+
+3 attachments
+I’ll review the attached context files first, pull out the relevant architecture and business requirements for these “crawler” connectors, then I’ll turn any gaps into focused questions before touching the repo.
+
+
+From the docs, the intended demo slice is conservative and enterprise-shaped: folder discovery plus one mailbox connector, with everything entering the same governed ingestion pipeline as source objects, candidate documents, ingestion batches, and jobs. I’m going to confirm the few choices that affect implementation before I delegate repo work.
+
+
+
+
+1.
+For the two initial crawlers, do you want Local Folder Discovery plus Outlook Mailbox Connector?
+2.
+Should I implement this in the repo now after you answer, or first create a short feature spec from the docs?
+3.
+For mailbox discovery, how conservative should the first version be?
+For the two initial crawlers, do you want Local Folder Discovery plus Outlook Mailbox Connector?
+Folder + Outlook
+Should I implement this in the repo now after you answer, or first create a short feature spec from the docs?
+Spec first
+For mailbox discovery, how conservative should the first version be?
+Full automation
+
+I’ll write the spec around your choices: Local Folder Discovery plus Outlook, and “full automation” interpreted as automated discovery and ingestion into the governed pipeline, not silently creating canonical contract records. That preserves the ADR requirement that connectors feed source objects and candidate documents before contract review.
+
+
+I’m going to create a Markdown spec file in the workspace now, focused on the demo slice and implementation handoff.
+
+
+
+Edit
+Code
+
+
+
+PracticeX_Crawler_Connectors_Spec
+Document
+
+I created and shared the spec for the two PracticeX crawler connectors.
+
+Included
+Local Folder Discovery crawler
+
+Outlook Mailbox Connector crawler
+
+Full automation for discovery, scoring, and ingestion
+
+Guardrail that discovered items do not silently become canonical contract records
+
+Shared ingestion pipeline expectations:
+
+source_connection
+
+source_object
+
+ingestion_batch
+
+ingestion_job
+
+candidate document/review staging
+
+audit events
+
+P0/P1/P2 requirements
+
+Acceptance criteria
+
+Data model expectations
+
+UX expectations
+
+Security/compliance expectations
+
+Open implementation questions
+
+I treated “full automation” as: automatically scan, score, create source objects, and import threshold-passing files into the governed ingestion/review pipeline, while still preserving the ADR decision that nothing silently becomes a canonical contract without review.
+
+The Markdown file is attached as practicex_crawler_connectors_spec.
+
+PracticeX_Crawler_Connectors_Spec
+PracticeX Crawler Connectors Feature Spec
+Problem Statement
+Independent and group medical practices manage payer contracts, leases, BAAs, vendor agreements, employment documents, amendments, fee schedules, renewal notices, and related obligations across messy local folders and employee mailboxes. Important documents and renewal dates are often buried in attachments, shared drives, and ad hoc folder structures, which creates missed renewal windows, weak negotiation preparation, and poor operational follow-through.
+
+PracticeX needs two first crawler connectors that can discover likely contract evidence and route it into the same governed ingestion pipeline:
+
+Local Folder Discovery
+
+Outlook Mailbox Connector
+
+The demo implementation should feel production-shaped. The crawlers may be narrow in source coverage, but they should write to durable ingestion concepts: source connections, source objects, ingestion batches, ingestion jobs, candidate documents, audit events, and downstream review queues.
+
+Goals
+Enable a practice administrator to discover likely contract-related files from a local folder and Outlook mailbox.
+
+Automatically ingest discovered high-signal items into the governed document ingestion pipeline.
+
+Preserve source traceability for every discovered item through source objects, batches, jobs, and audit events.
+
+Avoid silently converting discovered documents into canonical contract records without downstream review and classification.
+
+Support a strong demo story: PracticeX can look across a messy folder and a real mailbox, identify contract evidence, deduplicate it, classify/import it as candidate material, and push it into a governed review workflow.
+
+Non-Goals
+No EHR integration in this phase.
+
+No Zoom live connector in the first crawler release; Zoom transcripts can be imported through folder discovery if exported files exist.
+
+No canonical contract creation without review or explicit downstream workflow.
+
+No broad Drive, SharePoint, SFTP, Gmail, HRIS, or payer portal connectors in this slice.
+
+No full legal AI risk review in the crawler itself; crawlers only discover, score, ingest, and route documents.
+
+User Stories
+As a practice administrator, I want to scan a local folder for likely contracts and renewal documents so that I can find important agreements without manually opening every file.
+
+As a practice administrator, I want PracticeX to scan my Outlook mailbox for likely contract attachments so that agreements sent by payers, vendors, landlords, counsel, or staff are not missed.
+
+As a compliance or operations leader, I want every discovered item to retain its original source metadata so that I can audit where a document came from.
+
+As a reviewer, I want discovered documents to appear as candidate documents in the review queue so that I can confirm whether they are contracts, amendments, notices, or irrelevant files.
+
+As a product demo user, I want the system to show what it found, why it matched, and what was ingested so that I trust the automation.
+
+Product Principles
+Connectors feed one ingestion pipeline.
+
+Every discovered item becomes a source object.
+
+Every ingestion run creates an ingestion batch.
+
+Every imported item creates an ingestion job.
+
+Automation can discover, score, and import evidence, but canonical contract records require downstream review.
+
+PostgreSQL identifiers should remain unquoted snake_case.
+
+The backend should remain a modular monolith with clear source connection, ingestion, contract, evidence, workflow, renewal, and audit boundaries.
+
+Scope
+Crawler 1: Local Folder Discovery
+The local folder crawler scans a user-selected folder path or uploaded folder set and identifies files likely to contain contracts, renewals, obligations, or related administrative importance.
+
+Supported first-pass file types:
+
+PDF
+
+DOCX
+
+DOC
+
+XLSX
+
+TXT or exported transcript text where practical
+
+Signals:
+
+File name contains terms such as contract, agreement, amendment, renewal, fee schedule, lease, MSA, BAA, SOW, notice, termination, vendor, payer, reimbursement, employment, benefits, OSHA, HIPAA.
+
+Folder path contains terms such as contracts, legal, leases, vendors, payers, HR, compliance, renewals.
+
+Document text or metadata contains renewal date, effective date, expiration date, notice period, auto-renewal, term, payer, landlord, vendor, covered entity, business associate, fee schedule, rates, or reimbursement.
+
+File modified date is within an optionally selected range.
+
+Expected output:
+
+Source object for every discovered item.
+
+Candidate document for items passing minimum confidence.
+
+Ingestion batch for each scan run.
+
+Ingestion job for each imported candidate.
+
+Audit events for scan start, scan completion, item discovered, item skipped, item imported, and item failed.
+
+Crawler 2: Outlook Mailbox Connector
+The Outlook crawler connects through OAuth with read-only mailbox access and searches for likely contract evidence in email subjects, senders, folders, dates, and attachments.
+
+Supported first-pass attachment types:
+
+PDF
+
+DOCX
+
+DOC
+
+XLSX
+
+Signals:
+
+Subject contains contract, agreement, amendment, renewal, fee schedule, lease, MSA, BAA, SOW, notice, termination, payer, reimbursement, vendor, landlord, counsel, legal, benefits, employment, HIPAA, OSHA.
+
+Attachment filename contains contract-like terms.
+
+Sender or domain appears payer-like, vendor-like, legal/counsel-like, landlord/property-like, HR/benefits-like, or administratively relevant.
+
+Optional mailbox folder scope such as Inbox, Legal, Contracts, Vendors, Payers, HR, Compliance, or selected folders.
+
+Optional recent date range filter.
+
+Message body contains renewal or contract terms.
+
+Expected output:
+
+Source object for every discovered email or attachment candidate, depending on current source model.
+
+Candidate document for each attachment passing minimum confidence.
+
+Ingestion batch for each mailbox scan.
+
+Ingestion job for each imported attachment.
+
+Audit events for OAuth connection, scan start, scan completion, attachment discovered, attachment skipped, attachment imported, and attachment failed.
+
+Automation Boundary
+The selected implementation mode is full automation for discovery and ingestion:
+
+The crawler should automatically scan selected sources.
+
+The crawler should automatically create source objects.
+
+The crawler should automatically score discovered files and attachments.
+
+The crawler should automatically import items above the configured threshold into the ingestion pipeline as candidate documents.
+
+The crawler should not silently create canonical contract records.
+
+The crawler should not mark review complete.
+
+The crawler should preserve enough reason codes to explain why each item matched.
+
+This balances demo automation with enterprise trust.
+
+Requirements
+P0 Must Have
+Local folder crawler
+
+Acceptance criteria:
+
+Given a configured local folder source, when a scan is started, then the system creates an ingestion batch.
+
+Given a folder containing supported file types, when the scan runs, then the crawler identifies supported files and records each as a source object or skipped source object with reason.
+
+Given a file with contract-like filename, path, metadata, or content signals, when it crosses the confidence threshold, then the system creates an ingestion job and candidate document.
+
+Given a file that fails processing, when the scan completes, then the failure is recorded without failing the entire batch.
+
+Outlook mailbox crawler
+
+Acceptance criteria:
+
+Given a connected Outlook account, when a mailbox scan is started, then the system creates an ingestion batch for that run.
+
+Given emails with supported attachments, when the scan runs, then the crawler evaluates subject, sender, date, folder, body snippet, and attachment metadata.
+
+Given an attachment crossing the confidence threshold, when the scan processes it, then the system imports it into the ingestion pipeline as a candidate document.
+
+Given an unsupported attachment type, when encountered, then the system records it as skipped with a clear reason.
+
+Shared source and ingestion model
+
+Acceptance criteria:
+
+Given any crawler-discovered item, when it is recorded, then it is associated with a source connection and source object.
+
+Given any imported item, when ingestion begins, then it is associated with an ingestion batch and ingestion job.
+
+Given duplicate files or attachments, when detected by content hash or stable source identity, then the system avoids duplicate candidate documents and records deduplication status.
+
+Review-safe automation
+
+Acceptance criteria:
+
+Given an imported candidate document, when ingestion completes, then it appears in the appropriate review queue or candidate list.
+
+Given a high-confidence document, when imported, then it still does not become a canonical contract record without downstream review or explicit existing workflow.
+
+Given a reviewer opens a candidate, then they can see source type, source object, discovered timestamp, confidence, and reason codes.
+
+Audit and observability
+
+Acceptance criteria:
+
+Given any crawler run, when it starts and finishes, then audit events are recorded.
+
+Given each item processed, when it is imported, skipped, deduplicated, or failed, then the system records a status and reason.
+
+Given a scan completes, when the user views results, then they can see total discovered, imported, skipped, duplicate, and failed counts.
+
+P1 Should Have
+Configurable scan filters
+
+Acceptance criteria:
+
+Given a scan setup screen or API request, when the user provides a date range, folder scope, file types, or keywords, then the crawler applies those filters.
+
+Given no filters are provided, then safe default filters are used.
+
+Confidence scoring and reason codes
+
+Acceptance criteria:
+
+Given a discovered item, when scored, then it receives a confidence score and human-readable reason codes.
+
+Given multiple signals match, then the score reflects combined evidence rather than only file extension.
+
+Demo results view
+
+Acceptance criteria:
+
+Given a completed scan, when the user opens results, then they can see discovered items grouped by source, status, and confidence.
+
+Given an imported item, then the user can navigate from scan results to the candidate document or review item.
+
+Retry failed jobs
+
+Acceptance criteria:
+
+Given a failed ingestion job, when the user retries it, then the system creates or updates job status without duplicating successful source objects.
+
+P2 Could Have
+Manual override for skipped items.
+
+User-editable keyword dictionaries by practice or facility.
+
+Facility inference from folder path, mailbox folder, sender, or document text.
+
+Lightweight entity extraction preview for renewal date, expiration date, notice period, counterparty, and agreement type.
+
+Export scan summary as CSV for demo and validation.
+
+Data Model Expectations
+The implementation should use or introduce production-shaped concepts consistent with existing architecture:
+
+source_connection
+
+source_object
+
+ingestion_batch
+
+ingestion_job
+
+candidate_document or equivalent existing review/document staging concept
+
+audit_event
+
+Recommended source object fields:
+
+id
+
+tenant_id
+
+facility_id nullable
+
+source_connection_id
+
+source_type
+
+external_id or stable_source_key
+
+display_name
+
+original_path or mailbox_message_id
+
+attachment_id nullable
+
+content_hash nullable
+
+mime_type
+
+size_bytes
+
+discovered_at
+
+modified_at or received_at
+
+discovery_status
+
+confidence_score
+
+reason_codes
+
+metadata_json
+
+Recommended ingestion batch fields:
+
+id
+
+tenant_id
+
+source_connection_id
+
+started_at
+
+completed_at
+
+status
+
+total_discovered
+
+total_imported
+
+total_skipped
+
+total_duplicates
+
+total_failed
+
+initiated_by_user_id nullable
+
+configuration_json
+
+Recommended ingestion job fields:
+
+id
+
+tenant_id
+
+ingestion_batch_id
+
+source_object_id
+
+status
+
+started_at
+
+completed_at
+
+error_message nullable
+
+candidate_document_id nullable
+
+Use existing project names/types if equivalents already exist.
+
+UX Expectations
+Minimum demo UX should support:
+
+Choose crawler type: Local Folder or Outlook.
+
+Configure scan scope.
+
+Start scan.
+
+See scan progress or completed summary.
+
+See discovered items with status, confidence, and reason codes.
+
+See what was imported into review.
+
+Navigate to review/candidate document.
+
+For the first implementation, API-first with a minimal UI is acceptable if the existing application already has an ingestion or review UI that can be extended.
+
+Security and Compliance
+Outlook access must be OAuth-based and read-only.
+
+Do not request write mailbox permissions.
+
+Store only necessary source metadata.
+
+Do not ingest patient records or clinical EHR data as part of this feature.
+
+Keep crawler actions auditable.
+
+Ensure tenant and facility scoping are enforced consistently.
+
+Avoid logging sensitive document contents in application logs.
+
+Success Metrics
+Demo/pilot activation:
+
+A user can complete a local folder scan and see imported candidates in under 5 minutes for a small sample dataset.
+
+A user can connect Outlook and complete a mailbox scan without engineering intervention.
+
+Discovery quality:
+
+At least 80% of obvious contract-like sample documents are identified as candidates.
+
+Unsupported or irrelevant files are skipped with clear reasons.
+
+Trust and governance:
+
+100% of imported items have source object, ingestion batch, ingestion job, status, and audit trail.
+
+0 items become canonical contract records without review.
+
+Reliability:
+
+A failed item does not fail the entire scan.
+
+Duplicate content is not imported twice as separate candidate documents.
+
+Open Questions
+What Microsoft authentication registration will be used for Outlook OAuth in demo: existing Entra app, new demo app, or development-only configuration?
+
+Should local folder discovery run server-side from an accessible path, browser upload, or local desktop helper pattern?
+
+What is the existing name in the codebase for candidate documents or document staging, if already implemented?
+
+Should full automation import every threshold-passing item immediately, or should threshold levels be configurable by tenant?
+
+Should scan results be facility-scoped in the first demo, or tenant-wide with optional facility assignment during review?
+
+Yes, let's work more on the pruning part. And then we have to have some intelligent intelligence built-in to If this is a valid PDF or the document that we are trying to extract To show in the demo that that's what we are going to do we are going to prune that logic data. and then it will only Pick up the most likely files, right, between certain ranges or something, Shows the user that these are the files that will be processed Um, Is it possible to create a zip file? of certain sizes. Let us say if my folder has 200 files Interesting. So is it possible for this crawler to create a zip file, two zip files maximum with 20 files or 25 files in each? Because when you upload, zipping will make it faster, right? Can we demonstrate that? But I want to ask you actually what are the other optimizations you can think of which should be very fast and that is what differentiates our product.
+
+I’ll keep this at architecture/brainstorm level and won’t change code yet. The key distinction is: zipping is an upload optimization, but the bigger differentiator is avoiding upload and OCR work in the first place.Yes. This is exactly where PracticeX can feel differentiated.
+
+The best product story is not:
+
+text
+Upload 200 files → wait → maybe find contracts
+The better story is:
+
+text
+Scan 200 files locally → prune to 42 likely files → package into 2 optimized processing bundles → process only the best candidates → show why each was selected
+That is much more impressive and much more enterprise-grade.
+
+Core idea
+We should split Source Discovery into four stages:
+
+text
+1. Inventory
+2. Prune
+3. Package
+4. Process
+The current version mostly starts at upload/process. The next version should add the smarter Inventory + Prune layer before upload.
+
+Proposed demo flow
+For a folder with 200 files, the UI should show something like:
+
+text
+200 files scanned locally
+137 ignored by fast filters
+21 skipped as unsupported
+8 duplicates detected
+34 likely contract files selected
+2 processing bundles created
+34 files sent for extraction
+0 canonical contracts created automatically
+This tells the CEO group:
+
+PracticeX is not dumping your whole folder into AI. It is intelligently reducing noise, controlling cost, and only processing likely business-critical documents.
+
+That is a strong demo moment.
+
+Should we create ZIP files?
+Yes, we can.
+
+But with one nuance:
+
+Zipping makes upload logistics faster, not always file size smaller.
+
+Many document formats are already compressed:
+
+PDF is often compressed
+
+DOCX is already a ZIP internally
+
+XLSX is already a ZIP internally
+
+So the main benefit of ZIP is:
+
+fewer HTTP requests
+
+easier batching
+
+better retry boundaries
+
+one batch ID per package
+
+progress tracking
+
+cleaner audit trail
+
+ability to process in chunks
+
+For 200 files, the crawler can create processing bundles like:
+
+text
+bundle_001.zip → 25 selected files
+bundle_002.zip → 17 selected files
+For the demo, yes, we can show:
+
+text
+2 optimized bundles created
+That feels tangible and fast.
+
+Product recommendation
+Do not hard-code “maximum two ZIPs” as a permanent rule.
+
+Instead, configure it as a policy:
+
+text
+max_files_per_bundle: 25
+max_demo_bundles: 2
+max_total_upload_bytes: configurable
+For the CEO demo, we can cap it visually at two bundles.
+
+For the real enterprise product, if a folder has 5,000 files and 280 likely candidates, we should queue more bundles safely instead of dropping the rest.
+
+Better architecture
+The flow should look like this:
+
+text
+User selects folder
+  ↓
+Browser creates local manifest
+  ↓
+PracticeX scores metadata
+  ↓
+User sees recommended files
+  ↓
+Browser packages selected files into ZIP bundles
+  ↓
+Backend ingests bundles
+  ↓
+Server validates files
+  ↓
+Local text extraction first
+  ↓
+Document AI only when needed
+  ↓
+Candidate review queue
+Stage 1: Inventory
+Before uploading file bytes, the browser creates a manifest.
+
+Example:
+
+json
+{
+  "relative_path": "Payers/BCBS/2024 Amendment 3.pdf",
+  "file_name": "2024 Amendment 3.pdf",
+  "extension": ".pdf",
+  "size_bytes": 1843221,
+  "last_modified": "2025-01-14T18:22:10Z"
+}
+This is fast because it sends only metadata, not the files.
+
+The UI can immediately say:
+
+text
+Scanning folder structure...
+200 files inventoried
+Stage 2: Pruning logic
+The pruning logic should produce a score and reason codes.
+
+Strong positive signals
+File path:
+
+text
+/contracts/
+/payer/
+/payor/
+/vendor/
+/legal/
+/leases/
+/renewals/
+/fee schedules/
+/baa/
+/hr/
+/compliance/
+Filename:
+
+text
+contract
+agreement
+amendment
+renewal
+fee schedule
+lease
+baa
+msa
+sow
+notice
+termination
+reimbursement
+rates
+addendum
+statement of work
+File type:
+
+text
+.pdf
+.docx
+.doc
+.xlsx
+.txt
+.eml
+.msg
+Date signals:
+
+text
+modified recently
+created near renewal season
+received near contract cycle
+Size signals:
+
+text
+not empty
+not suspiciously tiny
+not enormous unless folder/name strongly indicates contract
+Negative signals
+Skip or deprioritize:
+
+text
+.jpg
+.png
+.gif
+.mp4
+.zip inside zip unless user confirms
+.exe
+.dll
+.tmp
+.log
+.csv unless in rate/fee folder
+node_modules
+system folders
+photos
+scans without contract-like name/path
+Scoring bands
+I would use something like:
+
+text
+80-100: Strong match, auto-selected
+60-79: Likely match, selected by default
+35-59: Possible match, visible but not selected
+0-34: Skipped
+The UI should show this clearly:
+
+text
+Strong matches: 18
+Likely matches: 16
+Possible matches: 22
+Skipped: 144
+Stage 3: Valid document check
+We need two different meanings of “valid.”
+
+1. Valid file container
+Is it actually a usable file?
+
+For PDFs:
+
+starts with PDF signature
+
+readable PDF structure
+
+not zero bytes
+
+not corrupted
+
+not password-protected, or flagged as encrypted
+
+page count available if possible
+
+For DOCX/XLSX:
+
+valid ZIP container
+
+contains expected Office XML files
+
+not corrupted
+
+not password-protected
+
+For TXT/CSV:
+
+readable text encoding
+
+not binary masquerading as text
+
+2. Valid contract candidate
+Is it likely contract evidence?
+
+That is decided by:
+
+path/name signals
+
+quick text sniffing
+
+document structure
+
+counterparty-like terms
+
+dates
+
+legal/commercial language
+
+rate table clues
+
+renewal/termination language
+
+So the UI should not just say “valid” or “invalid.” It should say:
+
+text
+Valid file: Yes
+Likely contract evidence: High
+Extraction method: Local text first
+OCR required: No
+Or:
+
+text
+Valid file: Yes
+Likely contract evidence: Medium
+Extraction method: First 3 pages OCR
+OCR required: Yes
+Reason: scanned PDF with contract filename
+Stage 4: ZIP bundling
+After pruning, create bundles only from selected files.
+
+Example for 200 files:
+
+text
+200 total files
+49 selected for processing
+Bundle 1: 25 files, 38 MB
+Bundle 2: 24 files, 31 MB
+151 files not uploaded
+This is a strong demo visual.
+
+The user should see:
+
+text
+Processing bundles
+Bundle 1 ready
+Bundle 2 ready
+Upload optimized: 151 files avoided
+Estimated pages avoided: 2,400
+Should ZIP happen client-side?
+Yes, for the browser folder flow.
+
+The browser can:
+
+Read selected local files.
+
+Package them into ZIP bundles.
+
+Include a manifest JSON inside each bundle.
+
+Upload each bundle to the backend.
+
+Show bundle progress.
+
+Each bundle could contain:
+
+text
+manifest.json
+files/Payers/BCBS/2024 Amendment 3.pdf
+files/Vendors/Olympus Service Agreement.docx
+files/Leases/Northside Suite 310 Lease.pdf
+The backend then processes the bundle as a controlled ingestion batch.
+
+Important design decision
+We should keep the original relative paths.
+
+Relative paths are extremely valuable:
+
+text
+Payers/BCBS/2024 Amendment 3.pdf
+Vendors/Olympus/Service Renewal.pdf
+Leases/Northside/Suite 310 Lease.pdf
+The folder structure itself is a classification signal.
+
+So the ZIP should preserve folder paths.
+
+Other speed optimizations
+Here are the optimizations I think differentiate PracticeX.
+
+1. Metadata-first scanning
+Do not upload first.
+
+First scan:
+
+text
+name
+path
+extension
+size
+last modified
+This is the cheapest and fastest step.
+
+Demo message:
+
+text
+PracticeX scanned 200 local files without uploading them.
+That builds trust.
+
+2. Upload avoidance
+The product should explicitly show:
+
+text
+151 files avoided
+72% upload reduction
+This is more impressive than just showing upload progress.
+
+3. Partial hashing
+Full hashing every file can be slow for large files.
+
+Use staged hashing:
+
+text
+quick fingerprint = filename + size + modified time + first/last bytes
+full SHA-256 = only selected files
+This helps quickly detect likely duplicates before doing expensive reads.
+
+4. Content-addressed dedupe
+Once a full hash exists, store it.
+
+If the same file appears again under a different name:
+
+text
+BCBS Contract Final.pdf
+BCBS Contract FINAL COPY.pdf
+PracticeX should say:
+
+text
+Duplicate content detected
+Already processed in previous batch
+This avoids repeated extraction.
+
+5. Local text extraction before OCR
+For DOCX, XLSX, and digital PDFs, we should extract text locally/server-side before calling Azure or Google.
+
+Only scanned PDFs should go to OCR.
+
+This matters because many contract PDFs have embedded text. OCRing them is unnecessary.
+
+6. First-page or first-three-page sniff
+For long PDFs, do not analyze all pages first.
+
+Do:
+
+text
+first 1-3 pages → classify
+If likely contract:
+
+text
+continue full layout/OCR/extraction
+If not:
+
+text
+stop
+This is a huge cost-control strategy.
+
+7. Page-count estimation before processing
+Before OCR/extraction, estimate page count.
+
+The UI can show:
+
+text
+This scan would process approximately 312 pages.
+PracticeX avoided approximately 2,100 irrelevant pages.
+That makes cost control visible.
+
+8. Extraction method routing
+Each file should get an extraction route:
+
+text
+DOCX → local XML text extraction
+XLSX fee schedule → local sheet inspection first
+Digital PDF → local PDF text extraction
+Scanned PDF → Azure/Google OCR
+Image PDF → OCR only if high confidence
+Unknown → skip or manual review
+9. Provider routing
+We should not permanently lock the product to one document AI provider.
+
+Define an abstraction:
+
+csharp
+IDocumentUnderstandingProvider
+Then implementations:
+
+text
+LocalTextProvider
+AzureDocumentIntelligenceProvider
+GoogleDocumentAiProvider
+Policy chooses the route:
+
+text
+cheap local first
+OCR provider second
+full extraction provider third
+This lets us optimize for cost later.
+
+10. Confidence-gated OCR
+OCR should require enough confidence.
+
+Example:
+
+text
+filename/path score >= 60 → allow OCR
+score 35-59 → user approval required
+score < 35 → no OCR
+This prevents burning money on random scanned documents.
+
+11. Progressive UI
+The user should see results quickly.
+
+Instead of waiting for all processing:
+
+text
+0-2 seconds: folder inventoried
+2-4 seconds: shortlist ready
+4-8 seconds: bundles created
+8+ seconds: processing begins
+UI should feel alive:
+
+text
+Scanning metadata...
+Pruning irrelevant files...
+Creating optimized bundles...
+Uploading selected files...
+Extracting contract evidence...
+12. Priority queue
+Process highest-confidence documents first.
+
+If the demo folder has 200 files, within seconds the top 10 should appear:
+
+text
+Regence BlueShield Amendment #3
+Olympus Service Renewal
+Northside Suite 310 Lease
+Aetna Fee Schedule 2025
+Business Associate Agreement
+The rest can continue in the background.
+
+13. Graph metadata-first for Outlook
+Same pruning idea for Outlook.
+
+Do not download every attachment.
+
+Use Graph to inspect:
+
+text
+subject
+sender
+domain
+body preview
+attachment name
+attachment type
+received date
+folder
+Then download only likely attachments.
+
+Example:
+
+text
+2,400 messages scanned
+83 messages had contract-like signals
+31 attachments selected
+12 candidates created
+That is a strong demo story.
+
+14. Review feedback loop
+After reviewer decisions, improve the pruning model.
+
+If user rejects:
+
+text
+marketing brochure
+insurance card
+random scanned receipt
+PracticeX learns to down-rank similar files.
+
+If user accepts:
+
+text
+payer amendment
+fee schedule
+lease renewal
+vendor MSA
+PracticeX learns to up-rank similar patterns.
+
+This becomes the product’s intelligence moat.
+
+15. Facility-aware hints
+Folder paths can imply facility:
+
+text
+Northside/Payers/BCBS.pdf
+Lakeview GI/Vendors/Olympus.pdf
+Evergreen ASC/Lease.pdf
+The crawler can suggest:
+
+text
+Facility: Northside
+Counterparty: BCBS
+Type: payer amendment
+without needing full extraction.
+
+Recommended demo UX
+I’d make the Source Discovery page show a staged workflow:
+
+Step 1: Select folder
+text
+Choose folder
+Step 2: Local scan
+text
+200 files found
+Step 3: Intelligent pruning
+text
+34 selected
+22 possible
+144 skipped
+Step 4: Review selected files
+Table:
+
+File	Path	Score	Why selected	Action
+BCBS Amendment 3.pdf	Payers/BCBS	94	amendment, payer folder, PDF	Selected
+Olympus Renewal.docx	Vendors/Olympus	88	renewal, vendor folder	Selected
+Northside Lease.pdf	Leases/Northside	91	lease, renewal terms	Selected
+Logo.png	Marketing	3	unsupported image	Skipped
+Step 5: Create bundles
+text
+Bundle 1: 25 files
+Bundle 2: 9 files
+151 files avoided
+Step 6: Process
+text
+Candidates created
+Review queue ready
+What I would build next
+Before adding more extraction, I would build this:
+
+1. Manifest pre-scan API
+text
+POST /api/sources/folder/manifest
+Input:
+
+text
+metadata only
+Output:
+
+text
+file scores
+selected/skipped status
+reason codes
+recommended bundles
+2. Browser-side pruning UI
+Show:
+
+text
+all files
+selected files
+possible files
+skipped files
+Let user choose:
+
+text
+Process selected only
+Include possible matches
+Manual select
+3. Bundle creator
+Client creates ZIP bundles:
+
+text
+max 25 files per bundle
+max bundle size configurable
+manifest.json included
+relative paths preserved
+4. Bundle ingestion API
+text
+POST /api/sources/folder/bundles
+Backend unpacks, validates, hashes, dedupes, and creates source objects/candidates.
+
+5. File validity checks
+Add:
+
+text
+valid_pdf
+encrypted_pdf
+corrupt_pdf
+valid_docx
+valid_xlsx
+unsupported_container
+6. Extraction routing
+Add field:
+
+text
+extraction_route
+Values:
+
+text
+local_text
+pdf_text
+ocr_first_pages
+full_ocr
+skip
+manual_review
+My recommendation
+For the next implementation, I would not start with Azure/Google yet.
+
+I would first build:
+
+text
+manifest scan → intelligent pruning → selected ZIP bundles → file validation → extraction route assignment
+That gives us the differentiated speed story.
+
+Then after that, plug in:
+
+text
+Azure Document Intelligence
+Google Document AI
+behind an abstraction.
+
+The differentiated product message
+This should be the product line:
+
+PracticeX does not upload and OCR everything. It inventories first, prunes locally, packages only likely contract evidence, and escalates expensive AI only when there is a strong reason.
+
+That is fast, cost-aware, and enterprise-trustworthy.
+
+Is there any value in running this crawler as a standalone process that we will have facilities download ?Is this useful if we transform the client's desktop to optimize?
+Yes, there is real value in a downloadable / standalone crawler, but I would not make it the only path.
+
+The right architecture is:
+
+text
+Browser upload for low-friction demos and small practices
+Desktop / facility crawler for serious enterprise discovery
+Server-side connectors for cloud systems like Outlook, Drive, SharePoint, SFTP
+For your product, a facility-side desktop crawler could be a strong differentiator because many practices have messy local/network folders that a browser cannot efficiently inspect.
+
+Short answer
+Yes, a standalone crawler is useful if we position it as a PracticeX Facility Discovery Agent.
+
+It would run on the client’s machine or facility network, scan folders locally, prune aggressively, package only selected files, and upload only the optimized bundles to PracticeX.
+
+That gives us:
+
+faster scanning
+
+better pruning
+
+less browser limitation
+
+network share access
+
+resumable background jobs
+
+better hashing/dedupe
+
+local validation before upload
+
+lower cloud processing cost
+
+stronger enterprise trust story
+
+Why browser-only is limited
+A browser-based folder upload is good for demo and first-time use, but it has limits:
+
+Browser can inspect file names and relative paths, but not deeply or consistently across all file types.
+
+Large folder reads can be slow or memory-heavy.
+
+Browser cannot easily scan mapped drives or network shares in a robust way.
+
+Browser cannot run as a background process.
+
+Browser ZIP creation can be heavy for thousands of files.
+
+Browser cannot easily do resumable processing across days.
+
+Browser security sandbox limits filesystem access.
+
+If the tab closes, the scan stops.
+
+It is hard to keep a durable local index of what was already scanned.
+
+So for 50-200 files, browser flow is fine.
+
+For 10,000 files across practice shared drives, a local agent is much better.
+
+What a desktop crawler enables
+A standalone crawler can do real optimization before anything leaves the client environment.
+
+1. True local pre-scan
+It can scan:
+
+text
+C:\PracticeDocs
+Z:\SharedDrive\Contracts
+\\nas01\Legal
+\\server\Practice Admin
+The browser generally cannot do that cleanly.
+
+2. Local content sniffing
+The agent can inspect files locally without uploading them:
+
+PDF header validation
+
+PDF page count
+
+PDF text layer detection
+
+encrypted/corrupt PDF detection
+
+DOCX XML sniffing
+
+XLSX sheet names and first rows
+
+MSG/EML attachment metadata
+
+duplicate detection
+
+first-page text extraction where possible
+
+This means the cloud receives only high-value candidates.
+
+3. Strong dedupe
+A local crawler can maintain a local index:
+
+text
+file_path
+file_size
+modified_at
+quick_fingerprint
+sha256
+last_scan_id
+last_upload_status
+So if the user scans again next week, it can say:
+
+text
+Only 17 new or changed files found.
+That is very powerful.
+
+4. Network share support
+Many medical practices store documents in:
+
+text
+shared drives
+NAS folders
+Windows file shares
+mapped drives
+old file servers
+A facility-side crawler can reach those if the user has local access.
+
+The web app cannot.
+
+5. Resumable uploads
+The agent can upload bundles in the background:
+
+text
+bundle_001.zip uploaded
+bundle_002.zip retrying
+bundle_003.zip paused
+If internet drops, it resumes later.
+
+6. Bandwidth control
+The agent can respect:
+
+text
+only upload after 6 PM
+max 5 Mbps
+pause on metered connection
+only use office Wi-Fi
+This matters in real facilities.
+
+7. Local privacy controls
+A very strong enterprise message:
+
+PracticeX scans metadata and light document signals locally first. Irrelevant files never leave the facility.
+
+That is a trust differentiator.
+
+8. Cost controls
+The desktop crawler can estimate before upload:
+
+text
+Files avoided: 8,432
+Pages avoided: 114,000
+Estimated OCR avoided: very high
+It reduces cloud OCR/API costs.
+
+Should we build it now?
+Not first.
+
+I would design for it now, but build it after the browser manifest flow is working.
+
+Recommended sequence:
+
+text
+1. Browser manifest scan
+2. ZIP bundle ingestion
+3. Backend ingestion orchestration
+4. Outlook Graph connector
+5. Desktop/facility crawler using the same manifest/bundle APIs
+The desktop crawler should not create a separate product path. It should use the same backend APIs.
+
+Architecture
+The desktop crawler should be a thin edge client.
+
+text
+PracticeX Web App
+       ↓
+Source Discovery API
+       ↓
+Manifest scoring API
+       ↓
+Bundle ingestion API
+       ↑
+Facility Discovery Agent
+The agent does local discovery and sends:
+
+text
+manifest.json
+selected bundles
+scan telemetry
+The cloud still owns:
+
+text
+tenant/facility identity
+source connections
+ingestion batches
+document candidates
+review tasks
+audit events
+contract records
+Agent responsibilities
+The standalone crawler should do:
+
+authenticate to PracticeX
+
+enumerate selected folders
+
+build file manifest
+
+run local pruning rules
+
+optionally call backend scoring policy
+
+validate containers
+
+detect digital PDF vs scanned PDF
+
+calculate hashes
+
+create ZIP bundles
+
+upload bundles
+
+resume failed uploads
+
+write local logs
+
+report scan status to backend
+
+It should not do:
+
+canonical contract creation
+
+final legal interpretation
+
+source of truth ownership
+
+silent publishing
+
+uncontrolled AI extraction
+
+storing PHI-sensitive content longer than needed
+
+Product name idea
+I’d call it:
+
+text
+PracticeX Facility Discovery Agent
+or:
+
+text
+PracticeX Local Discovery Agent
+For enterprise buyers, “Agent” sounds normal and infrastructure-grade.
+
+For less technical users, the UI can say:
+
+text
+Install PracticeX Scanner
+Deployment options
+Option 1: Desktop app
+Best for early facility users.
+
+Windows first
+
+tray app
+
+simple login
+
+choose folders
+
+scan now
+
+upload selected candidates
+
+Tech options:
+
+.NET worker + small WPF/WinUI shell
+
+Electron + Node
+
+Tauri
+
+.NET MAUI
+
+Given your stack is ASP.NET, I’d lean:
+
+text
+.NET Worker Service + minimal Windows tray UI
+This keeps language/platform aligned.
+
+Option 2: Windows service
+Best for mature enterprise deployment.
+
+installed by IT
+
+runs in background
+
+service account can access network shares
+
+scheduled scans
+
+logs to Windows Event Log
+
+auto-update
+
+This is better later, not day one.
+
+Option 3: CLI crawler
+Best for first internal implementation.
+
+bash
+practicex-agent scan --folder "Z:\Contracts" --facility Northside
+A CLI can be built quickly and later wrapped in a UI/service.
+
+Option 4: Docker/container crawler
+Useful for larger customers with IT support.
+
+bash
+docker run practicex/facility-agent
+Good for NAS/server environments.
+
+Security model
+If we build this, security must be strong from day one.
+
+The agent should use:
+
+OAuth device code flow or browser login
+
+short-lived access tokens
+
+refresh token encrypted locally
+
+tenant/facility-scoped source connection
+
+least privilege
+
+upload-only permission
+
+signed agent releases
+
+auto-update with signature verification
+
+no secrets in config files
+
+local logs without document content
+
+TLS-only upload
+
+optional allowlist of folder roots
+
+For enterprise:
+
+admin can revoke the agent
+
+all scans appear in audit log
+
+all uploads tied to source connection and device identity
+
+local agent version recorded on every batch
+
+What to show in demo
+Even before we build the full agent, we can demonstrate the concept:
+
+text
+Browser flow:
+"Lightweight web scanner"
+
+Future:
+"Facility Discovery Agent for network shares and high-volume discovery"
+A demo message:
+
+For smaller practices, you can drag in a folder from the browser. For larger facilities, the PracticeX Facility Discovery Agent runs locally, prunes before upload, and only sends optimized contract evidence bundles.
+
+That will sound thoughtful and enterprise-ready.
+
+The architecture should support both
+We should define shared contracts now:
+
+Manifest API
+text
+POST /api/sources/{connectionId}/manifest
+Bundle API
+text
+POST /api/sources/{connectionId}/bundles
+Scan status API
+text
+GET /api/sources/batches/{batchId}
+Agent registration API
+text
+POST /api/agents/register
+Later:
+
+text
+POST /api/agents/{agentId}/heartbeat
+POST /api/agents/{agentId}/scans
+The browser and desktop agent both call the same APIs.
+
+Browser vs desktop
+Capability	Browser flow	Facility agent
+Demo speed	High	Medium
+No install	Yes	No
+Network shares	Weak	Strong
+Thousands of files	Weak/Medium	Strong
+Local content sniffing	Limited	Strong
+Background scans	No	Yes
+Resumable uploads	Limited	Strong
+Enterprise IT deployment	Medium	Strong
+First week build speed	High	Low/Medium
+My recommendation
+Build the product in layers:
+
+Now
+Implement browser-based:
+
+text
+manifest scan → pruning → selected bundle upload
+This gives us the demo and validates the user experience.
+
+Next
+Add backend support that is agent-ready:
+
+text
+source agent identity
+scan manifests
+bundle upload
+scan status
+version metadata
+Later
+Build the actual desktop/facility agent:
+
+text
+PracticeX Facility Discovery Agent
+The key is not to fork the architecture. Browser and desktop should share the same ingestion contracts.
+
+Bottom line
+Yes, there is value in a standalone crawler, especially for real facilities with messy shared drives.
+
+But I would frame it as:
+
+text
+Browser discovery for lightweight onboarding
+Facility Discovery Agent for enterprise-scale local/network discovery
+And I would build the manifest + pruning + bundle APIs first, because they serve both.
+
+ok, do the browser thing first , and give me the spec for the desktop crawler too, i ll get it implemented properly .. but give enough thought to the desktop crawler and include as many optimizations as you can think of .. the crawler could create a package with few zipfiles and a manifest for the browser to upload efficiently

@@ -13,5 +13,27 @@ public sealed class DocumentAsset : Entity
     public int? PageCount { get; set; }
     public string TextStatus { get; set; } = "pending";
     public string OcrStatus { get; set; } = "pending";
+    public string? ExtractionRoute { get; set; }
+    public string? ValidityStatus { get; set; }
+    public bool? HasTextLayer { get; set; }
+    public bool? IsEncrypted { get; set; }
+}
+
+public static class ExtractionRoutes
+{
+    public const string LocalText = "local_text";
+    public const string OcrFirstPages = "ocr_first_pages";
+    public const string FullOcr = "full_ocr";
+    public const string Skip = "skip";
+    public const string ManualReview = "manual_review";
+}
+
+public static class ValidityStatuses
+{
+    public const string Valid = "valid";
+    public const string Encrypted = "encrypted";
+    public const string Corrupt = "corrupt";
+    public const string Unsupported = "unsupported";
+    public const string Unknown = "unknown";
 }
 

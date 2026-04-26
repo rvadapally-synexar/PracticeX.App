@@ -113,6 +113,47 @@ export interface OutlookOAuthStartResponse {
   state: string;
 }
 
+export interface ManifestItem {
+  relativePath: string;
+  name: string;
+  sizeBytes: number;
+  lastModifiedUtc: string;
+  mimeType?: string | null;
+}
+
+export interface ManifestScoredItem {
+  manifestItemId: string;
+  relativePath: string;
+  name: string;
+  sizeBytes: number;
+  candidateType: string;
+  confidence: number;
+  reasonCodes: string[];
+  recommendedAction: 'select' | 'optional' | 'skip';
+  band: 'strong' | 'likely' | 'possible' | 'skipped';
+  counterpartyHint: string | null;
+}
+
+export interface ManifestScanResponse {
+  batchId: string;
+  phase: string;
+  totalItems: number;
+  strongCount: number;
+  likelyCount: number;
+  possibleCount: number;
+  skippedCount: number;
+  items: ManifestScoredItem[];
+}
+
+export interface QueuedFile {
+  file: File;
+  relativePath: string;
+}
+
+export interface SelectedManifestFile extends QueuedFile {
+  manifestItemId: string;
+}
+
 export const sourcesApi = {
   listConnectors: () => request<ConnectorDescriptor[]>('/sources/connectors'),
   listConnections: () => request<SourceConnection[]>('/sources/connections'),
@@ -137,6 +178,28 @@ export const sourcesApi = {
       method: 'POST',
       body: form,
     });
+  },
+
+  scanManifest: (connectionId: string, items: ManifestItem[], notes?: string) =>
+    request<ManifestScanResponse>(`/sources/connections/${connectionId}/folder/manifest`, {
+      method: 'POST',
+      body: JSON.stringify({ items, notes }),
+    }),
+
+  uploadBundle: (connectionId: string, batchId: string, files: SelectedManifestFile[], notes?: string) => {
+    const form = new FormData();
+    files.forEach((entry, i) => {
+      form.append('file', entry.file, entry.file.name);
+      form.append(`paths[${i}]`, entry.relativePath);
+      form.append(`manifestItemIds[${i}]`, entry.manifestItemId);
+    });
+    if (notes) {
+      form.append('notes', notes);
+    }
+    return request<IngestionBatchSummary>(
+      `/sources/connections/${connectionId}/folder/bundles?batchId=${encodeURIComponent(batchId)}`,
+      { method: 'POST', body: form },
+    );
   },
 
   startOutlookOAuth: (connectionId: string) =>
