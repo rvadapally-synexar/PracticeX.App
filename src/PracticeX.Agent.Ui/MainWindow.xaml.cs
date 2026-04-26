@@ -9,6 +9,7 @@ using System.Windows.Data;
 using Microsoft.Win32;
 using PracticeX.Agent.Cli.Http;
 using PracticeX.Agent.Cli.Inventory;
+using PracticeX.Discovery.Contracts;
 
 namespace PracticeX.Agent.Ui;
 

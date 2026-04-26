@@ -1,4 +1,4 @@
-namespace PracticeX.Application.SourceDiscovery.Validation;
+namespace PracticeX.Discovery.Validation;
 
 public interface IDocumentValidityInspector
 {

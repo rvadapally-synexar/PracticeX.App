@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PracticeX.Domain\PracticeX.Domain.csproj" />
+    <ProjectReference Include="..\PracticeX.Discovery\PracticeX.Discovery.csproj" />
   </ItemGroup>
 
   <ItemGroup>

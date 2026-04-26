@@ -3,13 +3,14 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Logging.Abstractions;
 using PracticeX.Application.Common;
-using PracticeX.Application.SourceDiscovery.Classification;
 using PracticeX.Application.SourceDiscovery.Storage;
-using PracticeX.Application.SourceDiscovery.Validation;
+using PracticeX.Discovery.Classification;
+using PracticeX.Discovery.Validation;
 using PracticeX.Domain.Sources;
 using PracticeX.Infrastructure.Persistence;
+using PracticeX.Infrastructure.SourceDiscovery.Complexity;
 using PracticeX.Infrastructure.SourceDiscovery.Ingestion;
-using PracticeX.Infrastructure.SourceDiscovery.Validation;
+using PracticeX.Infrastructure.SourceDiscovery.Pricing;
 
 namespace PracticeX.Tests.SourceDiscovery.Support;
 
@@ -49,11 +50,19 @@ internal sealed class OrchestratorFixture : IDisposable
         });
         Db.SaveChanges();
 
+        var profiler = new CompositeComplexityProfiler(
+            new PdfComplexityProfiler(),
+            new ExcelComplexityProfiler(),
+            new DocxComplexityProfiler(),
+            new PlainTextComplexityProfiler());
+
         Orchestrator = new IngestionOrchestrator(
             Db,
             Storage,
             new RuleBasedContractClassifier(),
             new BasicDocumentValidityInspector(),
+            profiler,
+            new PlaceholderPricingPolicy(),
             Clock,
             NullLogger<IngestionOrchestrator>.Instance);
     }

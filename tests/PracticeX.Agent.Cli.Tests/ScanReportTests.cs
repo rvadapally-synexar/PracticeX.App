@@ -1,5 +1,5 @@
-using PracticeX.Agent.Cli.Http;
 using PracticeX.Agent.Cli.Output;
+using PracticeX.Discovery.Contracts;
 
 namespace PracticeX.Agent.Cli.Tests;
 

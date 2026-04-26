@@ -17,6 +17,7 @@
   <ItemGroup>
     <ProjectReference Include="..\PracticeX.Application\PracticeX.Application.csproj" />
     <ProjectReference Include="..\PracticeX.Infrastructure\PracticeX.Infrastructure.csproj" />
+    <ProjectReference Include="..\PracticeX.Discovery.Contracts\PracticeX.Discovery.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

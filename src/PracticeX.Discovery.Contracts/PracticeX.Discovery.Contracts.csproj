@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Description>
+      Wire-level DTOs and constants for PracticeX Source Discovery. Shared by
+      PracticeX.Api (cloud), PracticeX.Agent.Cli (desktop scanner), and
+      PracticeX.Discovery (rule library). Lean by design — no third-party
+      dependencies — so any consumer can reference it cheaply.
+    </Description>
+  </PropertyGroup>
+
+</Project>

@@ -2,11 +2,13 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using PracticeX.Application.Common;
-using PracticeX.Application.SourceDiscovery.Classification;
+using PracticeX.Application.SourceDiscovery.Complexity;
 using PracticeX.Application.SourceDiscovery.Connectors;
 using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Storage;
-using PracticeX.Application.SourceDiscovery.Validation;
+using PracticeX.Discovery.Classification;
+using PracticeX.Discovery.Contracts;
+using PracticeX.Discovery.Validation;
 using PracticeX.Domain.Audit;
 using PracticeX.Domain.Documents;
 using PracticeX.Domain.Sources;
@@ -29,6 +31,8 @@ public sealed class IngestionOrchestrator(
     IDocumentStorage storage,
     IDocumentClassifier classifier,
     IDocumentValidityInspector validityInspector,
+    IComplexityProfiler complexityProfiler,
+    IPricingPolicy pricingPolicy,
     IClock clock,
     ILogger<IngestionOrchestrator> logger) : IIngestionOrchestrator
 {
@@ -206,6 +210,9 @@ public sealed class IngestionOrchestrator(
         else
         {
             validity = validityInspector.Inspect(item.InlineContent, item.MimeType, item.Name);
+            var complexity = complexityProfiler.Profile(item.InlineContent, item.MimeType, item.Name, validity);
+            var estimatedHours = pricingPolicy.EstimateHours(complexity);
+
             asset = new DocumentAsset
             {
                 TenantId = request.TenantId,
@@ -221,6 +228,11 @@ public sealed class IngestionOrchestrator(
                 HasTextLayer = validity.HasTextLayer,
                 IsEncrypted = validity.IsEncrypted,
                 ExtractionRoute = validity.ExtractionRoute,
+                ComplexityTier = complexity.Tier.ToCode(),
+                ComplexityFactorsJson = JsonSerializer.Serialize(complexity.Factors),
+                ComplexityBlockersJson = JsonSerializer.Serialize(complexity.Blockers),
+                MetadataJson = complexity.MetadataJson,
+                EstimatedComplexityHours = estimatedHours,
                 CreatedAt = clock.UtcNow
             };
             dbContext.DocumentAssets.Add(asset);

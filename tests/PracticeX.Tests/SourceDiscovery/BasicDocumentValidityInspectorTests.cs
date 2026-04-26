@@ -1,8 +1,7 @@
 using System.IO.Compression;
 using System.Text;
-using PracticeX.Application.SourceDiscovery.Validation;
+using PracticeX.Discovery.Validation;
 using PracticeX.Domain.Documents;
-using PracticeX.Infrastructure.SourceDiscovery.Validation;
 
 namespace PracticeX.Tests.SourceDiscovery;
 

@@ -187,6 +187,12 @@ public class PracticeXDbContext(DbContextOptions<PracticeXDbContext> options) : 
             entity.Property(x => x.OcrStatus).HasMaxLength(40).IsRequired();
             entity.Property(x => x.ExtractionRoute).HasMaxLength(40);
             entity.Property(x => x.ValidityStatus).HasMaxLength(40);
+            entity.Property(x => x.ComplexityTier).HasMaxLength(2);
+            entity.Property(x => x.ComplexityFactorsJson).HasColumnType("jsonb");
+            entity.Property(x => x.ComplexityBlockersJson).HasColumnType("jsonb");
+            entity.Property(x => x.MetadataJson).HasColumnType("jsonb");
+            entity.Property(x => x.EstimatedComplexityHours).HasPrecision(8, 2);
+            entity.HasIndex(x => new { x.TenantId, x.ComplexityTier });
         });
 
         modelBuilder.Entity<DocumentCandidate>(entity =>

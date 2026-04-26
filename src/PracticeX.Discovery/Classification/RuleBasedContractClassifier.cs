@@ -1,6 +1,6 @@
 using PracticeX.Domain.Documents;
 
-namespace PracticeX.Application.SourceDiscovery.Classification;
+namespace PracticeX.Discovery.Classification;
 
 /// <summary>
 /// Deterministic, rule-based classifier. Production replaces this with the LLM

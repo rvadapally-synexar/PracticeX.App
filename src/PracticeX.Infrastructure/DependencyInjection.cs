@@ -2,18 +2,21 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using PracticeX.Application.Common;
-using PracticeX.Application.SourceDiscovery.Classification;
+using PracticeX.Application.SourceDiscovery.Complexity;
 using PracticeX.Application.SourceDiscovery.Connectors;
 using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Outlook;
 using PracticeX.Application.SourceDiscovery.Storage;
-using PracticeX.Application.SourceDiscovery.Validation;
+using PracticeX.Discovery.Classification;
+using PracticeX.Discovery.Pipelines;
+using PracticeX.Discovery.Validation;
 using PracticeX.Infrastructure.Persistence;
+using PracticeX.Infrastructure.SourceDiscovery.Complexity;
 using PracticeX.Infrastructure.SourceDiscovery.Connectors;
 using PracticeX.Infrastructure.SourceDiscovery.Ingestion;
 using PracticeX.Infrastructure.SourceDiscovery.Outlook;
+using PracticeX.Infrastructure.SourceDiscovery.Pricing;
 using PracticeX.Infrastructure.SourceDiscovery.Storage;
-using PracticeX.Infrastructure.SourceDiscovery.Validation;
 using PracticeX.Infrastructure.Tenancy;
 
 namespace PracticeX.Infrastructure;
@@ -39,6 +42,13 @@ public static class DependencyInjection
 
         services.AddSingleton<IDocumentClassifier, RuleBasedContractClassifier>();
         services.AddSingleton<IDocumentValidityInspector, BasicDocumentValidityInspector>();
+        services.AddSingleton<IDocumentDiscoveryPipeline, DefaultDocumentDiscoveryPipeline>();
+        services.AddSingleton<PdfComplexityProfiler>();
+        services.AddSingleton<ExcelComplexityProfiler>();
+        services.AddSingleton<DocxComplexityProfiler>();
+        services.AddSingleton<PlainTextComplexityProfiler>();
+        services.AddSingleton<IComplexityProfiler, CompositeComplexityProfiler>();
+        services.AddSingleton<IPricingPolicy, PlaceholderPricingPolicy>();
         services.AddSingleton<IDocumentStorage, LocalFileSystemDocumentStorage>();
         services.AddSingleton<IMicrosoftGraphTokenStore, InMemoryMicrosoftGraphTokenStore>();
 

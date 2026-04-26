@@ -1,4 +1,4 @@
-using PracticeX.Application.SourceDiscovery.Ingestion;
+using PracticeX.Discovery.Contracts;
 
 namespace PracticeX.Tests.SourceDiscovery;
 

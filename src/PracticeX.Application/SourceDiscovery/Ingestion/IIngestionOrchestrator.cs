@@ -103,32 +103,7 @@ public sealed class ManifestScoredItem
     public string? CounterpartyHint { get; init; }
 }
 
-public static class ManifestRecommendedActions
-{
-    public const string Select = "select";
-    public const string Optional = "optional";
-    public const string Skip = "skip";
-}
-
-public static class ManifestBands
-{
-    public const string Strong = "strong";   // confidence >= 0.80
-    public const string Likely = "likely";   // 0.60 <= confidence < 0.80
-    public const string Possible = "possible"; // 0.35 <= confidence < 0.60
-    public const string Skipped = "skipped";  // < 0.35
-
-    public static string From(decimal confidence) => confidence switch
-    {
-        >= 0.80m => Strong,
-        >= 0.60m => Likely,
-        >= 0.35m => Possible,
-        _ => Skipped
-    };
-
-    public static string RecommendedAction(decimal confidence) => From(confidence) switch
-    {
-        Strong or Likely => ManifestRecommendedActions.Select,
-        Possible => ManifestRecommendedActions.Optional,
-        _ => ManifestRecommendedActions.Skip
-    };
-}
+// ManifestBands and ManifestRecommendedActions live in
+// PracticeX.Discovery.Contracts so the desktop agent and any external consumer
+// can reference them without pulling the Application assembly. Keep imports
+// directly there: `using PracticeX.Discovery.Contracts;`.

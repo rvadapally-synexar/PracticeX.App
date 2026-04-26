@@ -10,6 +10,7 @@ using PracticeX.Application.Common;
 using PracticeX.Application.SourceDiscovery.Connectors;
 using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Outlook;
+using PracticeX.Discovery.Contracts;
 using PracticeX.Domain.Documents;
 using PracticeX.Domain.Sources;
 using PracticeX.Infrastructure.Persistence;

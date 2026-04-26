@@ -1,4 +1,4 @@
-namespace PracticeX.Application.SourceDiscovery.Classification;
+namespace PracticeX.Discovery.Classification;
 
 public interface IDocumentClassifier
 {

@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <Description>
+      PracticeX content-aware document discovery library. Pure C# logic — no
+      EF, no DI registration, no HTTP — so it runs identically inside the
+      cloud API and inside the desktop Facility Discovery Agent. Hosts the
+      classifier, validity inspector, signature detector, text extractor,
+      Document Intelligence + LLM seams, and the per-contract-type schemas.
+    </Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\PracticeX.Discovery.Contracts\PracticeX.Discovery.Contracts.csproj" />
+    <ProjectReference Include="..\PracticeX.Domain\PracticeX.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="PdfPig" Version="0.1.14" />
+  </ItemGroup>
+
+</Project>

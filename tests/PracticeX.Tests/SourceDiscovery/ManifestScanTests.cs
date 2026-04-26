@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using PracticeX.Application.SourceDiscovery.Ingestion;
+using PracticeX.Discovery.Contracts;
 using PracticeX.Domain.Documents;
 using PracticeX.Domain.Sources;
 using PracticeX.Tests.SourceDiscovery.Support;

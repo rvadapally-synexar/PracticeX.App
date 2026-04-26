@@ -17,6 +17,22 @@ public sealed class DocumentAsset : Entity
     public string? ValidityStatus { get; set; }
     public bool? HasTextLayer { get; set; }
     public bool? IsEncrypted { get; set; }
+
+    // Complexity profiling — populated alongside validity inspection.
+    // Drives pricing and downstream Doc Intel routing.
+    public string? ComplexityTier { get; set; }                  // 'S','M','L','X'
+    public string? ComplexityFactorsJson { get; set; }           // jsonb, ["multi_sheet","has_formulas",...]
+    public string? ComplexityBlockersJson { get; set; }          // jsonb, ["macros_detected",...]
+    public string? MetadataJson { get; set; }                    // jsonb, format-specific details
+    public decimal? EstimatedComplexityHours { get; set; }
+}
+
+public static class ComplexityTierCodes
+{
+    public const string Simple   = "S";
+    public const string Moderate = "M";
+    public const string Large    = "L";
+    public const string Extra    = "X";
 }
 
 public static class ExtractionRoutes

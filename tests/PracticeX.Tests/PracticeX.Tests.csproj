@@ -23,6 +23,8 @@
     <ProjectReference Include="..\..\src\PracticeX.Domain\PracticeX.Domain.csproj" />
     <ProjectReference Include="..\..\src\PracticeX.Application\PracticeX.Application.csproj" />
     <ProjectReference Include="..\..\src\PracticeX.Infrastructure\PracticeX.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\PracticeX.Discovery\PracticeX.Discovery.csproj" />
+    <ProjectReference Include="..\..\src\PracticeX.Discovery.Contracts\PracticeX.Discovery.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

@@ -1,10 +1,9 @@
 using System.IO.Compression;
-using PracticeX.Application.SourceDiscovery.Validation;
 using PracticeX.Domain.Documents;
 using UglyToad.PdfPig;
 using UglyToad.PdfPig.Exceptions;
 
-namespace PracticeX.Infrastructure.SourceDiscovery.Validation;
+namespace PracticeX.Discovery.Validation;
 
 /// <summary>
 /// Cheap server-side container check that runs after bytes land. Drives

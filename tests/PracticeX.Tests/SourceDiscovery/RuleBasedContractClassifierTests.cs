@@ -1,4 +1,4 @@
-using PracticeX.Application.SourceDiscovery.Classification;
+using PracticeX.Discovery.Classification;
 using PracticeX.Domain.Documents;
 
 namespace PracticeX.Tests.SourceDiscovery;

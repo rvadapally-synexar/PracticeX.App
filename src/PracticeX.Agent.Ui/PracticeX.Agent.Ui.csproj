@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\PracticeX.Agent.Cli\PracticeX.Agent.Cli.csproj" />
+    <ProjectReference Include="..\PracticeX.Discovery.Contracts\PracticeX.Discovery.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
