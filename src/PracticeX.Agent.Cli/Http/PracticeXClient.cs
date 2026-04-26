@@ -135,6 +135,33 @@ public sealed class PracticeXClient : IDisposable
     }
 
     public void Dispose() => _http.Dispose();
+
+    /// <summary>
+    /// One-shot helper for the UI's connection dropdown. Doesn't need a
+    /// connectionId, so it builds its own short-lived HttpClient.
+    /// </summary>
+    public static async Task<IReadOnlyList<SourceConnectionDto>> ListConnectionsAsync(
+        Uri apiBaseUrl,
+        string? bearerToken,
+        bool insecure,
+        CancellationToken cancellationToken)
+    {
+        var handler = new HttpClientHandler();
+        if (insecure)
+        {
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+        }
+        using var http = new HttpClient(handler) { BaseAddress = apiBaseUrl };
+        if (!string.IsNullOrWhiteSpace(bearerToken))
+        {
+            http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", bearerToken);
+        }
+
+        var response = await http.GetAsync("/api/sources/connections", cancellationToken);
+        await EnsureSuccessAsync(response, "list connections", cancellationToken);
+        return await response.Content.ReadFromJsonAsync<List<SourceConnectionDto>>(Json, cancellationToken)
+            ?? new List<SourceConnectionDto>();
+    }
 }
 
 public sealed record BundleFile(

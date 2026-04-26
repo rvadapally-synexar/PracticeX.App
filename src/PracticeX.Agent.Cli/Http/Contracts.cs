@@ -70,6 +70,17 @@ public sealed record ProblemDetailsDto(
     [property: JsonPropertyName("detail")] string? Detail
 );
 
+public sealed record SourceConnectionDto(
+    Guid Id,
+    string SourceType,
+    string Status,
+    string? DisplayName,
+    string? OauthSubject,
+    DateTimeOffset? LastSyncAt,
+    DateTimeOffset CreatedAt,
+    string? LastError
+);
+
 public static class ManifestBandNames
 {
     public const string Strong = "strong";
