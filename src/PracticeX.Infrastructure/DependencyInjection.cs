@@ -10,6 +10,7 @@ using PracticeX.Application.SourceDiscovery.Storage;
 using PracticeX.Discovery.Classification;
 using PracticeX.Discovery.Pipelines;
 using PracticeX.Discovery.Signatures;
+using PracticeX.Discovery.TextExtraction;
 using PracticeX.Discovery.Validation;
 using PracticeX.Infrastructure.Persistence;
 using PracticeX.Infrastructure.SourceDiscovery.Complexity;
@@ -49,6 +50,13 @@ public static class DependencyInjection
         {
             sp.GetRequiredService<PdfSignatureDetector>(),
             sp.GetRequiredService<DocxSignatureDetector>()
+        }));
+        services.AddSingleton<PdfTextExtractor>();
+        services.AddSingleton<DocxTextExtractor>();
+        services.AddSingleton<IDocumentTextExtractor>(sp => new CompositeDocumentTextExtractor(new IDocumentTextExtractor[]
+        {
+            sp.GetRequiredService<PdfTextExtractor>(),
+            sp.GetRequiredService<DocxTextExtractor>()
         }));
         services.AddSingleton<IDocumentDiscoveryPipeline, DefaultDocumentDiscoveryPipeline>();
         services.AddSingleton<PdfComplexityProfiler>();
