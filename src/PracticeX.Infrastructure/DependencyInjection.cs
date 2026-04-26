@@ -8,6 +8,7 @@ using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Outlook;
 using PracticeX.Application.SourceDiscovery.Storage;
 using PracticeX.Discovery.Classification;
+using PracticeX.Discovery.FieldExtraction;
 using PracticeX.Discovery.Pipelines;
 using PracticeX.Discovery.Signatures;
 using PracticeX.Discovery.TextExtraction;
@@ -58,6 +59,7 @@ public static class DependencyInjection
             sp.GetRequiredService<PdfTextExtractor>(),
             sp.GetRequiredService<DocxTextExtractor>()
         }));
+        services.AddSingleton<IContractFieldExtractor, EmploymentExtractor>();
         services.AddSingleton<IDocumentDiscoveryPipeline, DefaultDocumentDiscoveryPipeline>();
         services.AddSingleton<PdfComplexityProfiler>();
         services.AddSingleton<ExcelComplexityProfiler>();
