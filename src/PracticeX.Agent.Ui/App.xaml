@@ -167,6 +167,68 @@
         <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
         <Setter Property="Padding" Value="0,0,8,0" />
       </Style>
+
+      <!-- Filter chip toggle: bordered pill that lights up when checked -->
+      <Style x:Key="FilterChip" TargetType="ToggleButton">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource MutedBrush}" />
+        <Setter Property="BorderBrush" Value="#334155" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Padding" Value="14,6" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ToggleButton">
+              <Border x:Name="Pill"
+                      Background="{TemplateBinding Background}"
+                      BorderBrush="{TemplateBinding BorderBrush}"
+                      BorderThickness="{TemplateBinding BorderThickness}"
+                      CornerRadius="999"
+                      Padding="{TemplateBinding Padding}">
+                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+              </Border>
+              <ControlTemplate.Triggers>
+                <Trigger Property="IsChecked" Value="True">
+                  <Setter TargetName="Pill" Property="Background" Value="{StaticResource AccentBrush}" />
+                  <Setter TargetName="Pill" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                  <Setter Property="Foreground" Value="#0F172A" />
+                </Trigger>
+                <MultiTrigger>
+                  <MultiTrigger.Conditions>
+                    <Condition Property="IsMouseOver" Value="True" />
+                    <Condition Property="IsChecked" Value="False" />
+                  </MultiTrigger.Conditions>
+                  <Setter TargetName="Pill" Property="Background" Value="#1E293B" />
+                  <Setter Property="Foreground" Value="{StaticResource TextBrush}" />
+                </MultiTrigger>
+              </ControlTemplate.Triggers>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
+
+      <Style TargetType="ProgressBar">
+        <Setter Property="Background" Value="#0B1220" />
+        <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+        <Setter Property="BorderBrush" Value="#334155" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Height" Value="6" />
+        <Setter Property="Template">
+          <Setter.Value>
+            <ControlTemplate TargetType="ProgressBar">
+              <Border CornerRadius="999" Background="{TemplateBinding Background}">
+                <Grid x:Name="PART_Track">
+                  <Border x:Name="PART_Indicator"
+                          HorizontalAlignment="Left"
+                          Background="{TemplateBinding Foreground}"
+                          CornerRadius="999" />
+                </Grid>
+              </Border>
+            </ControlTemplate>
+          </Setter.Value>
+        </Setter>
+      </Style>
     </ResourceDictionary>
   </Application.Resources>
 </Application>

@@ -1,9 +1,11 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Data;
 using Microsoft.Win32;
 using PracticeX.Agent.Cli.Http;
 using PracticeX.Agent.Cli.Inventory;
@@ -13,6 +15,7 @@ namespace PracticeX.Agent.Ui;
 public partial class MainWindow : Window
 {
     public ObservableCollection<ScoredRowVm> Rows { get; } = new();
+    private ICollectionView? _rowsView;
     private Guid? _manifestBatchId;
     private string? _scanRoot;
     private List<ManifestItemDto> _manifestItems = new();
@@ -20,12 +23,16 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        ResultsGrid.ItemsSource = Rows;
+        _rowsView = CollectionViewSource.GetDefaultView(Rows);
+        _rowsView.Filter = RowFilter;
+        ResultsGrid.ItemsSource = _rowsView;
         Loaded += async (_, _) => await RefreshConnectionsAsync();
     }
 
     private bool Insecure => true; // dev default; the API uses self-signed certs locally
     private string? Token => Environment.GetEnvironmentVariable("PRACTICEX_TOKEN");
+
+    // ---- Connection list ------------------------------------------------------
 
     private async Task RefreshConnectionsAsync()
     {
@@ -48,7 +55,7 @@ public partial class MainWindow : Window
             else
             {
                 ConnectionCombo.SelectedIndex = 0;
-                SetStatus($"Loaded {folders.Count} local_folder connection(s).");
+                SetStatus($"Loaded {folders.Count} local_folder connection(s). Pick a folder and click Scan.");
             }
         }
         catch (Exception ex)
@@ -56,6 +63,10 @@ public partial class MainWindow : Window
             SetStatus($"Failed to load connections: {ex.Message}", isError: true);
         }
     }
+
+    private async void OnRefreshConnections(object sender, RoutedEventArgs e) => await RefreshConnectionsAsync();
+
+    // ---- Folder pick + scan ---------------------------------------------------
 
     private void OnBrowse(object sender, RoutedEventArgs e)
     {
@@ -69,8 +80,6 @@ public partial class MainWindow : Window
             FolderBox.Text = dlg.FolderName;
         }
     }
-
-    private async void OnRefreshConnections(object sender, RoutedEventArgs e) => await RefreshConnectionsAsync();
 
     private async void OnScan(object sender, RoutedEventArgs e)
     {
@@ -92,31 +101,45 @@ public partial class MainWindow : Window
 
         ScanBtn.IsEnabled = false;
         UploadBtn.IsEnabled = false;
+        SuccessPanel.Visibility = Visibility.Collapsed;
         Rows.Clear();
         ResetCounts();
-        SetStatus($"Inventorying {FolderBox.Text}...");
 
         try
         {
             _scanRoot = FolderBox.Text;
-            _manifestItems = await Task.Run(() => FolderEnumerator.Enumerate(_scanRoot).ToList());
+            ShowProgress("Inventorying folder...", "0 files");
+
+            var sw = Stopwatch.StartNew();
+            var progress = new Progress<int>(count =>
+            {
+                ProgressDetail.Text = $"{count:N0} files inventoried";
+                TotalText.Text = count.ToString("N0");
+            });
+
+            _manifestItems = await Task.Run(() => EnumerateWithProgress(_scanRoot!, progress));
+
             if (_manifestItems.Count == 0)
             {
+                HideProgress();
                 SetStatus("No files passed inventory filters.", isError: true);
                 return;
             }
 
-            SetStatus($"Inventoried {_manifestItems.Count} files. Posting metadata-only manifest...");
+            ShowProgress(
+                $"Scoring {_manifestItems.Count:N0} files in the cloud...",
+                "Posting metadata-only manifest (no bytes uploaded)",
+                indeterminate: true);
 
             using var client = new PracticeXClient(apiUri, conn.Id, Token, Insecure);
             var response = await client.PostManifestAsync(_manifestItems, notes: null, default);
 
             _manifestBatchId = response.BatchId;
-            TotalText.Text = response.TotalItems.ToString();
-            StrongText.Text = response.StrongCount.ToString();
-            LikelyText.Text = response.LikelyCount.ToString();
-            PossibleText.Text = response.PossibleCount.ToString();
-            SkippedText.Text = response.SkippedCount.ToString();
+            TotalText.Text = response.TotalItems.ToString("N0");
+            StrongText.Text = response.StrongCount.ToString("N0");
+            LikelyText.Text = response.LikelyCount.ToString("N0");
+            PossibleText.Text = response.PossibleCount.ToString("N0");
+            SkippedText.Text = response.SkippedCount.ToString("N0");
 
             foreach (var item in response.Items)
             {
@@ -126,10 +149,15 @@ public partial class MainWindow : Window
             }
 
             ApplyDefaultSelection();
-            SetStatus($"Scan complete. Manifest batch {response.BatchId} (phase=manifest). Pick rows to upload, then click Upload selected.");
+            UpdateFilterCount();
+            HideProgress();
+
+            sw.Stop();
+            SetStatus($"Scan complete in {sw.Elapsed.TotalSeconds:0.0}s. Manifest batch {response.BatchId} (phase=manifest). Pick rows to upload, then click Upload selected.");
         }
         catch (Exception ex)
         {
+            HideProgress();
             SetStatus($"Scan failed: {ex.Message}", isError: true);
         }
         finally
@@ -137,6 +165,28 @@ public partial class MainWindow : Window
             ScanBtn.IsEnabled = true;
         }
     }
+
+    /// <summary>
+    /// Streams items off the enumerator and reports the running count back to
+    /// the UI thread every ~100 files. Keeps the KPI tile and progress bar
+    /// alive even on huge trees.
+    /// </summary>
+    private static List<ManifestItemDto> EnumerateWithProgress(string root, IProgress<int> progress)
+    {
+        var list = new List<ManifestItemDto>();
+        foreach (var item in FolderEnumerator.Enumerate(root))
+        {
+            list.Add(item);
+            if (list.Count % 100 == 0)
+            {
+                progress.Report(list.Count);
+            }
+        }
+        progress.Report(list.Count);
+        return list;
+    }
+
+    // ---- Upload --------------------------------------------------------------
 
     private async void OnUpload(object sender, RoutedEventArgs e)
     {
@@ -165,19 +215,26 @@ public partial class MainWindow : Window
         var bundleFiles = MapBundle(selected);
         UploadBtn.IsEnabled = false;
         ScanBtn.IsEnabled = false;
-        SetStatus($"Uploading {selected.Count} file(s) as bundle to batch {_manifestBatchId}...");
+        ShowProgress(
+            $"Uploading {selected.Count:N0} file(s)...",
+            "Streaming bytes to /folder/bundles",
+            indeterminate: true);
 
         try
         {
             using var client = new PracticeXClient(apiUri, conn.Id, Token, Insecure);
             var summary = await client.PostBundleAsync(_manifestBatchId.Value, bundleFiles, notes: null, default);
 
-            SetStatus($"Bundle complete. Status={summary.Status} | candidates={summary.CandidateCount} duplicates={summary.SkippedCount} errors={summary.ErrorCount}.");
+            HideProgress();
+            ShowSuccessPanel(summary, selected.Count, apiUri);
+
             // Once uploaded, the manifest batch is complete and can't accept more files.
             _manifestBatchId = null;
+            SetStatus($"Bundle complete. Status={summary.Status}. Open the review queue to triage candidates.");
         }
         catch (Exception ex)
         {
+            HideProgress();
             SetStatus($"Upload failed: {ex.Message}", isError: true);
         }
         finally
@@ -201,8 +258,14 @@ public partial class MainWindow : Window
             ManifestItemId: r.ManifestItemId)).ToList();
     }
 
-    private void OnSelectStrongLikely(object sender, RoutedEventArgs e) => SelectByPredicate(r => r.Band is ManifestBandNames.Strong or ManifestBandNames.Likely);
-    private void OnSelectAll(object sender, RoutedEventArgs e) => SelectByPredicate(r => r.Band != ManifestBandNames.Skipped);
+    // ---- Selection helpers ---------------------------------------------------
+
+    private void OnSelectStrongLikely(object sender, RoutedEventArgs e) =>
+        SelectByPredicate(r => r.Band is ManifestBandNames.Strong or ManifestBandNames.Likely);
+
+    private void OnSelectAllVisible(object sender, RoutedEventArgs e) =>
+        SelectByPredicate(r => RowFilter(r) && r.Band != ManifestBandNames.Skipped);
+
     private void OnClearSelection(object sender, RoutedEventArgs e) => SelectByPredicate(_ => false);
 
     private void SelectByPredicate(Func<ScoredRowVm, bool> shouldSelect)
@@ -214,14 +277,103 @@ public partial class MainWindow : Window
         UpdateSelectionLabel();
     }
 
-    private void ApplyDefaultSelection() => SelectByPredicate(r => r.Band is ManifestBandNames.Strong or ManifestBandNames.Likely);
+    private void ApplyDefaultSelection() =>
+        SelectByPredicate(r => r.Band is ManifestBandNames.Strong or ManifestBandNames.Likely);
 
     private void UpdateSelectionLabel()
     {
         var count = Rows.Count(r => r.IsSelected && r.Band != ManifestBandNames.Skipped);
-        SelectionText.Text = $"{count} selected";
+        SelectionText.Text = $"{count:N0} selected";
         UploadBtn.IsEnabled = count > 0 && _manifestBatchId is not null;
     }
+
+    // ---- Filter chips --------------------------------------------------------
+
+    private bool RowFilter(object obj) => obj is ScoredRowVm row && IsBandVisible(row.Band);
+
+    private bool IsBandVisible(string band) => band switch
+    {
+        ManifestBandNames.Strong => ShowStrongChip.IsChecked == true,
+        ManifestBandNames.Likely => ShowLikelyChip.IsChecked == true,
+        ManifestBandNames.Possible => ShowPossibleChip.IsChecked == true,
+        ManifestBandNames.Skipped => ShowSkippedChip.IsChecked == true,
+        _ => true
+    };
+
+    private void OnFilterChanged(object sender, RoutedEventArgs e)
+    {
+        _rowsView?.Refresh();
+        UpdateFilterCount();
+    }
+
+    private void UpdateFilterCount()
+    {
+        if (_rowsView is null) { FilterCountText.Text = string.Empty; return; }
+        var visible = Rows.Count(RowFilter);
+        var total = Rows.Count;
+        FilterCountText.Text = total == 0
+            ? string.Empty
+            : visible == total
+                ? $"showing all {total:N0}"
+                : $"showing {visible:N0} of {total:N0}";
+    }
+
+    // ---- Post-upload panel ---------------------------------------------------
+
+    private void ShowSuccessPanel(IngestionBatchSummaryDto summary, int requested, Uri apiBaseUrl)
+    {
+        SuccessPanel.Visibility = Visibility.Visible;
+        SuccessPanel.Tag = apiBaseUrl;
+        SuccessTitle.Text = $"Uploaded {requested:N0} file(s) — batch {summary.BatchId.ToString()[..8]}…";
+        SuccessDetail.Text = $"Cloud created {summary.CandidateCount:N0} candidate(s), skipped {summary.SkippedCount:N0} duplicate(s), and recorded {summary.ErrorCount:N0} error(s). " +
+                             "Reviewers can now triage these in the web UI's Source Discovery review queue.";
+    }
+
+    private void OnOpenReviewQueue(object sender, RoutedEventArgs e)
+    {
+        // Web UI lives at the same host on the Vite dev port (5173) in dev,
+        // or behind the API host in production. We open the dev port by default
+        // and fall back to the API host if launching the dev URL fails.
+        var devUiUrl = "http://localhost:5173/source-discovery";
+        try
+        {
+            Process.Start(new ProcessStartInfo { FileName = devUiUrl, UseShellExecute = true });
+        }
+        catch
+        {
+            // ShellExecute already handles browser registration on Windows;
+            // if it failed, surface the URL so the user can copy/paste.
+            SetStatus($"Could not open browser. Visit manually: {devUiUrl}", isError: true);
+        }
+    }
+
+    private void OnScanAnother(object sender, RoutedEventArgs e)
+    {
+        SuccessPanel.Visibility = Visibility.Collapsed;
+        Rows.Clear();
+        ResetCounts();
+        UpdateSelectionLabel();
+        UpdateFilterCount();
+        SetStatus("Ready. Pick a folder and click Scan.");
+    }
+
+    // ---- Progress bar helpers -----------------------------------------------
+
+    private void ShowProgress(string label, string detail, bool indeterminate = false, double? value = null)
+    {
+        ProgressPanel.Visibility = Visibility.Visible;
+        ProgressLabel.Text = label;
+        ProgressDetail.Text = detail;
+        ProgressBarCtl.IsIndeterminate = indeterminate || value is null;
+        if (value is { } v)
+        {
+            ProgressBarCtl.Value = v;
+        }
+    }
+
+    private void HideProgress() => ProgressPanel.Visibility = Visibility.Collapsed;
+
+    // ---- Status / counts -----------------------------------------------------
 
     private void ResetCounts()
     {
@@ -231,6 +383,7 @@ public partial class MainWindow : Window
         PossibleText.Text = "0";
         SkippedText.Text = "0";
         SelectionText.Text = "0 selected";
+        FilterCountText.Text = string.Empty;
     }
 
     private void SetStatus(string message, bool isError = false)
@@ -252,6 +405,10 @@ public sealed class ConnectionOption
 
     public Guid Id { get; }
     public string Display { get; }
+
+    // Override ToString so the ComboBox displays the friendly label even when
+    // the templated SelectionBoxItem doesn't pick up DisplayMemberPath.
+    public override string ToString() => Display;
 }
 
 public sealed class ScoredRowVm : INotifyPropertyChanged
