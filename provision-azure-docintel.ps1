@@ -21,7 +21,11 @@ $LOCATION      = "eastus"
 $DOCINTEL_NAME = "practicex-docintel"
 # ========================================================
 
-$ErrorActionPreference = "Stop"
+# NOTE: do NOT set $ErrorActionPreference = "Stop". PowerShell 7 treats
+# native-command stderr writes as terminating errors under Stop, which kills
+# the existence-check call (`az ... show` writes ResourceNotFound to stderr
+# when the resource doesn't exist, which is our expected branch). We rely on
+# $LASTEXITCODE checks instead.
 
 Write-Host ""
 Write-Host "=== PracticeX Azure Document Intelligence provisioning ===" -ForegroundColor Cyan
@@ -41,7 +45,7 @@ if (-not (Get-Command az -ErrorAction SilentlyContinue)) {
 
 # --- Step 1/5: login if needed ---
 Write-Host "[1/5] Verifying Azure login..." -ForegroundColor Yellow
-$null = & az account show 2>$null
+& az account show 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Not logged in. Opening browser - sign in as rvadapally@practicex.ai"
     & az login --only-show-errors | Out-Null
@@ -74,7 +78,7 @@ Write-Host "Resource group ready."
 # --- Step 4/5: Doc Intel resource (idempotent) ---
 Write-Host ""
 Write-Host "[4/5] Provisioning Document Intelligence resource $DOCINTEL_NAME..." -ForegroundColor Yellow
-$null = & az cognitiveservices account show --name $DOCINTEL_NAME --resource-group $RG_NAME --output none 2>$null
+& az cognitiveservices account show --name $DOCINTEL_NAME --resource-group $RG_NAME --output none 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Resource does not exist yet. Creating (~30 seconds)..."
     & az cognitiveservices account create `
