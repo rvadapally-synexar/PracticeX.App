@@ -2,7 +2,9 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using PracticeX.Application.Common;
+using PracticeX.Application.SourceDiscovery.DocumentAi;
 using PracticeX.Application.SourceDiscovery.Storage;
 using PracticeX.Discovery.Classification;
 using PracticeX.Discovery.Signatures;
@@ -10,6 +12,7 @@ using PracticeX.Discovery.Validation;
 using PracticeX.Domain.Sources;
 using PracticeX.Infrastructure.Persistence;
 using PracticeX.Infrastructure.SourceDiscovery.Complexity;
+using PracticeX.Infrastructure.SourceDiscovery.DocumentAi;
 using PracticeX.Infrastructure.SourceDiscovery.Ingestion;
 using PracticeX.Infrastructure.SourceDiscovery.Pricing;
 
@@ -71,6 +74,8 @@ internal sealed class OrchestratorFixture : IDisposable
             profiler,
             new PlaceholderPricingPolicy(),
             signatureDetector,
+            new NoOpDocumentIntelligenceProvider(),
+            Options.Create(new DocumentIntelligenceOptions()),
             Clock,
             NullLogger<IngestionOrchestrator>.Instance);
     }

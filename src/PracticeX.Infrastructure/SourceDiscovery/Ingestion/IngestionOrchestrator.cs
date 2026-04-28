@@ -2,13 +2,16 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using PracticeX.Application.Common;
 using PracticeX.Application.SourceDiscovery.Complexity;
 using PracticeX.Application.SourceDiscovery.Connectors;
+using PracticeX.Application.SourceDiscovery.DocumentAi;
 using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Storage;
 using PracticeX.Discovery.Classification;
 using PracticeX.Discovery.Contracts;
+using PracticeX.Discovery.DocumentAi;
 using PracticeX.Discovery.Signatures;
 using PracticeX.Discovery.Validation;
 using PracticeX.Domain.Audit;
@@ -36,6 +39,8 @@ public sealed class IngestionOrchestrator(
     IComplexityProfiler complexityProfiler,
     IPricingPolicy pricingPolicy,
     ISignatureDetector signatureDetector,
+    IDocumentIntelligenceProvider documentIntelligence,
+    IOptions<DocumentIntelligenceOptions> documentIntelligenceOptions,
     IClock clock,
     ILogger<IngestionOrchestrator> logger) : IIngestionOrchestrator
 {
@@ -282,6 +287,13 @@ public sealed class IngestionOrchestrator(
             dbContext.DocumentAssets.Add(asset);
             await dbContext.SaveChangesAsync(cancellationToken);
             isDuplicate = false;
+
+            // Route through Azure Document Intelligence when local extraction
+            // can't surface the text (scanned PDFs / image-only). Gated by
+            // global enable flag AND per-tenant allowlist — neither alone is
+            // enough. A failure here is logged + audited but never aborts the
+            // batch; the asset stays with OcrStatus='failed' for reprocessing.
+            await TryExtractLayoutAsync(request, asset, item, cancellationToken);
         }
 
         var classification = classifier.Classify(new ClassificationInput
@@ -478,6 +490,130 @@ public sealed class IngestionOrchestrator(
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<List<string>>(json); }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Routes a freshly-stored asset through Azure Document Intelligence when
+    /// the validity inspector has determined that local text extraction is
+    /// insufficient (no text layer, scanned PDF). Two-gate: provider must
+    /// report IsConfigured=true AND the request's tenant must be in the
+    /// AllowedTenantIds allowlist. Failures are non-fatal — the asset stays
+    /// with OcrStatus='failed' so a later reprocess can retry.
+    /// </summary>
+    private async Task TryExtractLayoutAsync(
+        IngestionRequest request,
+        DocumentAsset asset,
+        DiscoveredItem item,
+        CancellationToken cancellationToken)
+    {
+        if (!documentIntelligence.IsConfigured)
+        {
+            return;
+        }
+
+        if (asset.ExtractionRoute != ExtractionRoutes.OcrFirstPages &&
+            asset.ExtractionRoute != ExtractionRoutes.FullOcr)
+        {
+            return;
+        }
+
+        var options = documentIntelligenceOptions.Value;
+        if (options.AllowedTenantIds is null || !options.AllowedTenantIds.Contains(request.TenantId))
+        {
+            logger.LogInformation(
+                "DocIntel skipped for asset {AssetId}: tenant {Tenant} not in allowlist",
+                asset.Id, request.TenantId);
+            return;
+        }
+
+        if (item.InlineContent is null || item.InlineContent.Length == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            asset.OcrStatus = "running";
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            var extraction = await documentIntelligence.ExtractLayoutAsync(
+                new DocumentExtractionRequest(
+                    Content: item.InlineContent,
+                    FileName: item.Name,
+                    MimeType: item.MimeType,
+                    MaxPages: options.MaxPagesPerDocument),
+                cancellationToken);
+
+            asset.LayoutJson = JsonSerializer.Serialize(new
+            {
+                provider = extraction.ProviderName,
+                model = extraction.ProviderModel,
+                fullText = extraction.FullText,
+                pages = extraction.Pages,
+                tables = extraction.Tables,
+                keyValuePairs = extraction.KeyValuePairs,
+                latencyMs = extraction.LatencyMs
+            });
+            asset.LayoutProvider = extraction.ProviderName;
+            asset.LayoutModel = extraction.ProviderModel;
+            asset.LayoutExtractedAt = clock.UtcNow;
+            asset.LayoutPageCount = extraction.Pages.Count;
+            asset.OcrStatus = "completed";
+            asset.UpdatedAt = clock.UtcNow;
+
+            dbContext.AuditEvents.Add(new AuditEvent
+            {
+                TenantId = request.TenantId,
+                ActorType = "system",
+                ActorId = request.InitiatedByUserId,
+                EventType = "ingestion.layout.extracted",
+                ResourceType = "document_asset",
+                ResourceId = asset.Id,
+                MetadataJson = JsonSerializer.Serialize(new
+                {
+                    provider = extraction.ProviderName,
+                    model = extraction.ProviderModel,
+                    pageCount = extraction.Pages.Count,
+                    tableCount = extraction.Tables.Count,
+                    kvpCount = extraction.KeyValuePairs.Count,
+                    latencyMs = extraction.LatencyMs
+                }),
+                CreatedAt = clock.UtcNow
+            });
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation(
+                "DocIntel layout extracted for asset {AssetId}: {Pages} pages, {Tables} tables in {Latency}ms",
+                asset.Id, extraction.Pages.Count, extraction.Tables.Count, extraction.LatencyMs);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "DocIntel extraction failed for asset {AssetId} (tenant {Tenant}); marking ocr_status=failed",
+                asset.Id, request.TenantId);
+
+            asset.OcrStatus = "failed";
+            asset.UpdatedAt = clock.UtcNow;
+
+            dbContext.AuditEvents.Add(new AuditEvent
+            {
+                TenantId = request.TenantId,
+                ActorType = "system",
+                ActorId = request.InitiatedByUserId,
+                EventType = "ingestion.layout.failed",
+                ResourceType = "document_asset",
+                ResourceId = asset.Id,
+                MetadataJson = JsonSerializer.Serialize(new
+                {
+                    error = ex.GetType().Name,
+                    message = ex.Message
+                }),
+                CreatedAt = clock.UtcNow
+            });
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
     }
 
     public async Task<Result<ManifestScanResult>> ScoreManifestAsync(
