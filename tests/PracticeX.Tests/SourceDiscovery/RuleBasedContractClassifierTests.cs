@@ -83,8 +83,11 @@ public class RuleBasedContractClassifierTests
     }
 
     [Fact]
-    public void Classify_VendorKeyword_ClassifiesAsVendor()
+    public void Classify_VendorKeyword_ClassifiesAsServiceAgreement()
     {
+        // Slice 8: ServiceAgreement is a more specific bucket than the legacy
+        // VendorContract for "X Service Agreement" filenames. Olympus is a
+        // vendor, so the counterparty hint is still populated.
         var result = _classifier.Classify(new ClassificationInput
         {
             FileName = "Olympus Service Agreement Renewal.docx",
@@ -92,8 +95,40 @@ public class RuleBasedContractClassifierTests
             SizeBytes = 22_000
         });
 
-        Assert.Equal(DocumentCandidateTypes.VendorContract, result.CandidateType);
+        Assert.Equal(DocumentCandidateTypes.ServiceAgreement, result.CandidateType);
         Assert.Equal(DocumentCandidateStatus.PendingReview, result.Status);
         Assert.NotNull(result.CounterpartyHint);
+    }
+
+    [Theory]
+    [InlineData("CONE_2022_Bylaws_R&R.pdf",                                       "bylaws")]
+    [InlineData("EagleGICallcoverageAgreement.pdf",                               "call_coverage_agreement")]
+    [InlineData("01_call_coverage.pdf",                                           "call_coverage_agreement")]
+    [InlineData("signed NDA 1103 North Elm Street, Greens.pdf",                  "nda")]
+    [InlineData("CONFIDENTIAL- Signed NDA. .pdf",                                 "nda")]
+    [InlineData("Mutual Non-Disclosure Agreement.pdf",                           "nda")]
+    [InlineData("LOI_Eagle Renewal_1002 N. Church Street.docx",                  "lease_loi")]
+    [InlineData("Eagle -PMC-LOI Lease.docx",                                      "lease_loi")]
+    [InlineData("EEC Office 4th Lease Amemdment - CD103117.pdf",                 "lease_amendment")]
+    [InlineData("Eighth Amendment to Lease Agreement.pdf",                       "lease_amendment")]
+    [InlineData("AP Labs Service Agreement - Eagle MDS.pdf",                     "service_agreement")]
+    [InlineData("ReleaseNotes.txt",                                               "unknown")] // false-positive guard: "release" must NOT match "lease"
+    public void Classify_NewSlice8Types_RoutedCorrectly(string fileName, string expected)
+    {
+        var ext = Path.GetExtension(fileName).ToLowerInvariant();
+        var mime = ext switch
+        {
+            ".pdf" => "application/pdf",
+            ".docx" => "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            ".txt" => "text/plain",
+            _ => "application/octet-stream"
+        };
+        var result = _classifier.Classify(new ClassificationInput
+        {
+            FileName = fileName,
+            MimeType = mime,
+            SizeBytes = 4096
+        });
+        Assert.Equal(expected, result.CandidateType);
     }
 }

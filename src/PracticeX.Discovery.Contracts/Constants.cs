@@ -22,6 +22,16 @@ public static class DiscoveryReasonCodes
     public const string FolderHintPayer = "folder_hint_payer";
     public const string FolderHintLease = "folder_hint_lease";
 
+    // Specific contract-type matches (Slice 8 classifier expansion)
+    public const string FilenameLeaseAmendment = "filename_lease_amendment";
+    public const string FilenameLeaseLoi = "filename_lease_loi";
+    public const string FilenameNda = "filename_nda";
+    public const string FilenameMutualNda = "filename_mutual_nda";
+    public const string FilenameBylaws = "filename_bylaws";
+    public const string FilenameCallCoverage = "filename_call_coverage";
+    public const string FilenameServiceAgreement = "filename_service_agreement";
+    public const string FilenameRenewalLoi = "filename_renewal_loi";
+
     // Outlook-sourced
     public const string OutlookSenderDomain = "outlook_sender_domain";
     public const string OutlookSubjectKeywords = "outlook_subject_keywords";

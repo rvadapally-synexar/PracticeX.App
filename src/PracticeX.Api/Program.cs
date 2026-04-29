@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http.Features;
+using PracticeX.Api.Analysis;
 using PracticeX.Api.SourceDiscovery;
 using PracticeX.Infrastructure;
 using PracticeX.Infrastructure.Persistence;
@@ -80,6 +81,7 @@ app.MapGet("/api/system/info", () => Results.Ok(new
 .WithName("GetSystemInfo");
 
 app.MapSourceDiscoveryEndpoints();
+app.MapAnalysisEndpoints();
 
 // Demo seed: creates the default tenant + user the demo current-user resolver
 // expects. In production this is replaced by tenant onboarding flows.

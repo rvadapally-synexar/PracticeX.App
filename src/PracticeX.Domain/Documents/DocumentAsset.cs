@@ -34,6 +34,16 @@ public sealed class DocumentAsset : Entity
     public string? LayoutModel { get; set; }                     // 'prebuilt-layout' / 'prebuilt-contract'
     public DateTimeOffset? LayoutExtractedAt { get; set; }
     public int? LayoutPageCount { get; set; }
+
+    // Slice 8: regex field extraction onto layout text.
+    public string? ExtractedFieldsJson { get; set; }             // jsonb, { fields: [...], reason_codes: [...] }
+    public string? ExtractedSubtype { get; set; }                // 'lease_amendment', 'mutual_nda', etc.
+    public string? ExtractedSchemaVersion { get; set; }          // 'lease_v1'
+    public string? ExtractorName { get; set; }                   // 'lease-extractor-v1'
+    public string? ExtractionStatus { get; set; } = "pending";   // 'completed' / 'failed' / 'no_extractor'
+    public DateTimeOffset? ExtractionExtractedAt { get; set; }
+    public bool? ExtractedIsTemplate { get; set; }
+    public bool? ExtractedIsExecuted { get; set; }
 }
 
 public static class ComplexityTierCodes

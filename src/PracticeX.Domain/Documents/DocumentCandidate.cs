@@ -25,10 +25,16 @@ public static class DocumentCandidateTypes
     public const string PayerContract = "payer_contract";
     public const string VendorContract = "vendor_contract";
     public const string Lease = "lease";
+    public const string LeaseAmendment = "lease_amendment";
+    public const string LeaseLoi = "lease_loi";
     public const string EmployeeAgreement = "employee_agreement";
     public const string ProcessorAgreement = "processor_agreement";
     public const string Amendment = "amendment";
     public const string FeeSchedule = "fee_schedule";
+    public const string Nda = "nda";
+    public const string Bylaws = "bylaws";
+    public const string CallCoverageAgreement = "call_coverage_agreement";
+    public const string ServiceAgreement = "service_agreement";
     public const string Other = "other";
 }
 

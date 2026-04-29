@@ -12,7 +12,9 @@ using PracticeX.Application.SourceDiscovery.Storage;
 using PracticeX.Discovery.Classification;
 using PracticeX.Discovery.Contracts;
 using PracticeX.Discovery.DocumentAi;
+using PracticeX.Discovery.FieldExtraction;
 using PracticeX.Discovery.Signatures;
+using PracticeX.Discovery.TextExtraction;
 using PracticeX.Discovery.Validation;
 using PracticeX.Domain.Audit;
 using PracticeX.Domain.Documents;
@@ -41,6 +43,8 @@ public sealed class IngestionOrchestrator(
     ISignatureDetector signatureDetector,
     IDocumentIntelligenceProvider documentIntelligence,
     IOptions<DocumentIntelligenceOptions> documentIntelligenceOptions,
+    IDocumentTextExtractor documentTextExtractor,
+    IEnumerable<IContractFieldExtractor> contractFieldExtractors,
     IClock clock,
     ILogger<IngestionOrchestrator> logger) : IIngestionOrchestrator
 {
@@ -306,6 +310,14 @@ public sealed class IngestionOrchestrator(
             Hints = item.Hints
         });
 
+        // Slice 8: run regex field extractors against the now-available text.
+        // For new assets only (duplicates already have whatever extraction was
+        // done previously). Skip "unknown" docs - no extractor matches.
+        if (!isDuplicate && classification.CandidateType != DocumentCandidateTypes.Unknown)
+        {
+            await TryExtractFieldsAsync(request, asset, item, classification, signature, cancellationToken);
+        }
+
         // Combine reason codes from classifier + validity + signature, plus dedupe marker.
         var reasonCodes = classification.ReasonCodes.ToList();
         if (validity is not null)
@@ -490,6 +502,187 @@ public sealed class IngestionOrchestrator(
         if (string.IsNullOrWhiteSpace(json)) return null;
         try { return JsonSerializer.Deserialize<List<string>>(json); }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Slice 8: invokes the matching IContractFieldExtractor against the asset's
+    /// text content (Doc Intel layout_json fullText if available, else local
+    /// PdfPig/DocX extraction). Persists the result on document_assets.
+    /// </summary>
+    private async Task TryExtractFieldsAsync(
+        IngestionRequest request,
+        DocumentAsset asset,
+        DiscoveredItem item,
+        ClassificationResult classification,
+        SignatureReport? signature,
+        CancellationToken cancellationToken)
+    {
+        // Find the extractor that handles this candidate type.
+        var extractor = contractFieldExtractors.FirstOrDefault(x => x.CanExtract(classification.CandidateType));
+        if (extractor is null)
+        {
+            asset.ExtractionStatus = "no_extractor";
+            asset.UpdatedAt = clock.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        // Source the text. Layout JSON wins when Doc Intel ran; otherwise
+        // run local extraction on the bytes we still have in memory.
+        string fullText;
+        IReadOnlyList<ExtractedPage> pages;
+        IReadOnlyList<ExtractedHeading> headings = Array.Empty<ExtractedHeading>();
+        try
+        {
+            if (!string.IsNullOrEmpty(asset.LayoutJson))
+            {
+                using var doc = JsonDocument.Parse(asset.LayoutJson);
+                var root = doc.RootElement;
+                fullText = root.TryGetProperty("fullText", out var ftEl) ? ftEl.GetString() ?? string.Empty : string.Empty;
+                pages = ExtractPagesFromLayout(root);
+            }
+            else if (item.InlineContent is { Length: > 0 })
+            {
+                if (!documentTextExtractor.CanExtract(item.MimeType, item.Name))
+                {
+                    asset.ExtractionStatus = "no_text_extractor";
+                    asset.UpdatedAt = clock.UtcNow;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    return;
+                }
+                var textResult = documentTextExtractor.Extract(item.InlineContent, item.MimeType, item.Name);
+                fullText = textResult.FullText;
+                pages = textResult.Pages;
+                headings = textResult.Headings;
+            }
+            else
+            {
+                // No text source available - happens for duplicates that have neither layout nor inline.
+                asset.ExtractionStatus = "no_text_source";
+                asset.UpdatedAt = clock.UtcNow;
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex,
+                "Field extraction text-source failed for asset {AssetId}; marking extraction_status=text_source_failed",
+                asset.Id);
+            asset.ExtractionStatus = "text_source_failed";
+            asset.UpdatedAt = clock.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(fullText))
+        {
+            asset.ExtractionStatus = "empty_text";
+            asset.UpdatedAt = clock.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        try
+        {
+            var sigProvider = signature?.HasSignature == true && signature.Providers.Count > 0
+                ? signature.Providers[0]
+                : null;
+            var docusignEnvelope = signature?.Details
+                .Select(d => d.EnvelopeId)
+                .FirstOrDefault(e => !string.IsNullOrWhiteSpace(e));
+
+            var extractionInput = new FieldExtractionInput
+            {
+                FullText = fullText,
+                Pages = pages,
+                Headings = headings,
+                FileName = item.Name,
+                CandidateType = classification.CandidateType,
+                SignatureProvider = sigProvider,
+                DocusignEnvelopeId = docusignEnvelope
+            };
+
+            var result = extractor.Extract(extractionInput);
+
+            asset.ExtractedFieldsJson = JsonSerializer.Serialize(new
+            {
+                schemaVersion = result.SchemaVersion,
+                subtype = result.Subtype,
+                isTemplate = result.IsTemplate,
+                isExecuted = result.IsExecuted,
+                reasonCodes = result.ReasonCodes,
+                fields = result.Fields.Values.Select(f => new
+                {
+                    name = f.Name,
+                    value = f.Value,
+                    confidence = f.Confidence,
+                    sourceCitation = f.SourceCitation
+                }).ToList()
+            });
+            asset.ExtractedSubtype = result.Subtype;
+            asset.ExtractedSchemaVersion = result.SchemaVersion;
+            asset.ExtractorName = extractor.Name;
+            asset.ExtractedIsTemplate = result.IsTemplate;
+            asset.ExtractedIsExecuted = result.IsExecuted;
+            asset.ExtractionExtractedAt = clock.UtcNow;
+            asset.ExtractionStatus = "completed";
+            asset.UpdatedAt = clock.UtcNow;
+
+            dbContext.AuditEvents.Add(new AuditEvent
+            {
+                TenantId = request.TenantId,
+                ActorType = "system",
+                ActorId = request.InitiatedByUserId,
+                EventType = "ingestion.fields.extracted",
+                ResourceType = "document_asset",
+                ResourceId = asset.Id,
+                MetadataJson = JsonSerializer.Serialize(new
+                {
+                    extractor = extractor.Name,
+                    schemaVersion = result.SchemaVersion,
+                    subtype = result.Subtype,
+                    fieldCount = result.Fields.Count,
+                    fieldsWithValues = result.Fields.Values.Count(f => f.Value is not null),
+                    isTemplate = result.IsTemplate,
+                    isExecuted = result.IsExecuted
+                }),
+                CreatedAt = clock.UtcNow
+            });
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            logger.LogInformation(
+                "Field extraction complete for asset {AssetId}: extractor={Extractor} subtype={Subtype} fields={FieldCount}",
+                asset.Id, extractor.Name, result.Subtype, result.Fields.Count);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex,
+                "Field extractor {Extractor} failed for asset {AssetId}",
+                extractor.Name, asset.Id);
+            asset.ExtractionStatus = "failed";
+            asset.UpdatedAt = clock.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    private static IReadOnlyList<ExtractedPage> ExtractPagesFromLayout(JsonElement root)
+    {
+        if (!root.TryGetProperty("pages", out var pagesEl) || pagesEl.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<ExtractedPage>();
+        }
+        var pages = new List<ExtractedPage>();
+        foreach (var page in pagesEl.EnumerateArray())
+        {
+            var pageNumber = page.TryGetProperty("PageNumber", out var pnEl) && pnEl.TryGetInt32(out var pn) ? pn :
+                             page.TryGetProperty("pageNumber", out var pnEl2) && pnEl2.TryGetInt32(out var pn2) ? pn2 : 0;
+            var text = page.TryGetProperty("Text", out var txEl) ? txEl.GetString() ?? string.Empty :
+                       page.TryGetProperty("text", out var txEl2) ? txEl2.GetString() ?? string.Empty : string.Empty;
+            pages.Add(new ExtractedPage(pageNumber, text));
+        }
+        return pages;
     }
 
     /// <summary>

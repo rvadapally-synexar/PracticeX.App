@@ -7,7 +7,9 @@ using PracticeX.Application.Common;
 using PracticeX.Application.SourceDiscovery.DocumentAi;
 using PracticeX.Application.SourceDiscovery.Storage;
 using PracticeX.Discovery.Classification;
+using PracticeX.Discovery.FieldExtraction;
 using PracticeX.Discovery.Signatures;
+using PracticeX.Discovery.TextExtraction;
 using PracticeX.Discovery.Validation;
 using PracticeX.Domain.Sources;
 using PracticeX.Infrastructure.Persistence;
@@ -66,6 +68,20 @@ internal sealed class OrchestratorFixture : IDisposable
             new DocxSignatureDetector()
         });
 
+        var textExtractor = new CompositeDocumentTextExtractor(new IDocumentTextExtractor[]
+        {
+            new PdfTextExtractor(),
+            new DocxTextExtractor()
+        });
+
+        var fieldExtractors = new IContractFieldExtractor[]
+        {
+            new EmploymentExtractor(),
+            new NdaExtractor(),
+            new CorporateExtractor(),
+            new LeaseExtractor()
+        };
+
         Orchestrator = new IngestionOrchestrator(
             Db,
             Storage,
@@ -76,6 +92,8 @@ internal sealed class OrchestratorFixture : IDisposable
             signatureDetector,
             new NoOpDocumentIntelligenceProvider(),
             Options.Create(new DocumentIntelligenceOptions()),
+            textExtractor,
+            fieldExtractors,
             Clock,
             NullLogger<IngestionOrchestrator>.Instance);
     }
