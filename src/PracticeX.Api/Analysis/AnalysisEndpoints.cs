@@ -35,6 +35,7 @@ public static class AnalysisEndpoints
 
     private static async Task<IResult> GetDocumentContent(
         Guid assetId,
+        HttpContext httpContext,
         PracticeXDbContext db,
         IDocumentStorage storage,
         ICurrentUserContext userContext,
@@ -64,16 +65,17 @@ public static class AnalysisEndpoints
             return Results.NotFound();
         }
 
-        // Results.File with a fileDownloadName forces Content-Disposition: attachment,
-        // which makes browsers download instead of rendering inline. We want PDFs
-        // embedded in iframes, so use Results.Stream and set the filename hint via
-        // a custom inline disposition.
-        var safeName = fileName.Replace("\"", "");
-        return Results.Stream(
-            stream,
-            asset.MimeType,
-            fileDownloadName: null,
-            enableRangeProcessing: true);
+        // Force inline disposition. Without it, Chrome's iframe context falls
+        // back to a "Open in new tab" placeholder for PDFs. Filename hint
+        // ensures the browser's own download button keeps the original name.
+        var safeName = fileName.Replace("\"", "").Replace("\n", "").Replace("\r", "");
+        httpContext.Response.Headers["Content-Disposition"] = $"inline; filename=\"{safeName}\"";
+        // Allow embedding from app.practicex.ai (and pages.dev preview URLs).
+        // X-Frame-Options is broader than CSP frame-ancestors but Cloudflare
+        // sometimes injects DENY by default for protected resources.
+        httpContext.Response.Headers["Content-Security-Policy"] =
+            "frame-ancestors 'self' https://app.practicex.ai https://*.practicex-app.pages.dev";
+        return Results.Stream(stream, asset.MimeType, enableRangeProcessing: true);
     }
 
     private static async Task<Ok<DashboardResponse>> GetDashboard(
@@ -312,7 +314,10 @@ public static class AnalysisEndpoints
             catch { /* leave null on parse failure */ }
         }
 
-        // Pull a layout text snippet (first ~600 chars) for the demo's "see what we extracted" panel.
+        // Pull a text snippet for the demo's "what we read" panel. Prefer
+        // Doc Intel's layout fullText when it ran (best fidelity); otherwise
+        // fall back to the locally-extracted text saved during ingestion
+        // (PdfPig for digital PDFs, OpenXml for DOCX).
         string? layoutSnippet = null;
         if (!string.IsNullOrEmpty(asset.LayoutJson))
         {
@@ -322,10 +327,15 @@ public static class AnalysisEndpoints
                 if (doc.RootElement.TryGetProperty("fullText", out var ft))
                 {
                     var text = ft.GetString() ?? "";
-                    layoutSnippet = text.Length > 600 ? text[..600] + "..." : text;
+                    layoutSnippet = text.Length > 1500 ? text[..1500] + "..." : text;
                 }
             }
             catch { /* ignore */ }
+        }
+        if (string.IsNullOrEmpty(layoutSnippet) && !string.IsNullOrEmpty(asset.ExtractedFullText))
+        {
+            var text = asset.ExtractedFullText;
+            layoutSnippet = text.Length > 1500 ? text[..1500] + "..." : text;
         }
 
         return TypedResults.Ok(new DocumentDetailResponse(

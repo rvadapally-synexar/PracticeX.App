@@ -44,6 +44,12 @@ public sealed class DocumentAsset : Entity
     public DateTimeOffset? ExtractionExtractedAt { get; set; }
     public bool? ExtractedIsTemplate { get; set; }
     public bool? ExtractedIsExecuted { get; set; }
+
+    // Full text used by the regex extractor — sourced from layout_json fullText
+    // (when Doc Intel ran) or from PdfPig/DocX local extraction otherwise.
+    // Stored so the UI's "Original document" pane can show a snippet for
+    // formats the browser can't render natively (DOCX, XLSX).
+    public string? ExtractedFullText { get; set; }
 }
 
 public static class ComplexityTierCodes

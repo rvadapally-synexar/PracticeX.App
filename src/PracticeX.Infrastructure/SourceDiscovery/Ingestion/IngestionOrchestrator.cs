@@ -605,6 +605,15 @@ public sealed class IngestionOrchestrator(
 
             var result = extractor.Extract(extractionInput);
 
+            // Persist the text we just extracted so the UI can show "what we
+            // read" snippets for digital docs (DOCX/XLSX) the browser can't
+            // render. Cap the stored copy at ~250KB so a freak large doc
+            // doesn't blow up the asset row.
+            const int MaxStoredTextBytes = 256_000;
+            asset.ExtractedFullText = fullText.Length > MaxStoredTextBytes
+                ? fullText[..MaxStoredTextBytes]
+                : fullText;
+
             asset.ExtractedFieldsJson = JsonSerializer.Serialize(new
             {
                 schemaVersion = result.SchemaVersion,

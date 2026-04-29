@@ -201,6 +201,7 @@ public class PracticeXDbContext(DbContextOptions<PracticeXDbContext> options) : 
             entity.Property(x => x.ExtractedSchemaVersion).HasMaxLength(40);
             entity.Property(x => x.ExtractorName).HasMaxLength(80);
             entity.Property(x => x.ExtractionStatus).HasMaxLength(40);
+            entity.Property(x => x.ExtractedFullText).HasColumnType("text");
         });
 
         modelBuilder.Entity<DocumentCandidate>(entity =>

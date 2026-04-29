@@ -507,6 +507,42 @@ select {
   margin-top: -4px;
 }
 
+.value-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.value-list-item {
+  background: var(--px-bg-1);
+  border: 1px solid var(--px-line-2);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+.value-object {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.value-object-row {
+  display: grid;
+  font-size: 12px;
+  gap: 8px;
+  grid-template-columns: 110px minmax(0, 1fr);
+}
+
+.value-object-key {
+  color: var(--px-fg-muted);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.value-object-val {
+  word-break: break-word;
+}
+
 .reason-codes {
   display: flex;
   flex-wrap: wrap;

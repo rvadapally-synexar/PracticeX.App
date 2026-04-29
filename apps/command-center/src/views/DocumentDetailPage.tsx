@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactElement } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Card, ConfidenceBar, StatusChip } from '@practicex/design-system';
 import {
@@ -87,21 +87,25 @@ export function DocumentDetailPage() {
         <Card title="Original document" className="document-source-card">
           {sourceUrl ? (
             isPdf ? (
-              <iframe
-                title="Original PDF"
-                src={sourceUrl}
+              <object
+                data={sourceUrl}
+                type="application/pdf"
                 className="document-source-frame"
-              />
+              >
+                <iframe title="Original PDF" src={sourceUrl} className="document-source-frame" />
+              </object>
             ) : (
               <div className="document-source-fallback">
                 <p className="muted" style={{ marginBottom: 12 }}>
                   Browsers can't render this format inline.{' '}
                   <a href={sourceUrl} target="_blank" rel="noreferrer">Open the original</a> in a new tab,
-                  or read the OCR snippet below.
+                  or read the extracted text below.
                 </p>
                 {detail.layoutSnippet ? (
                   <pre className="layout-snippet">{detail.layoutSnippet}</pre>
-                ) : null}
+                ) : (
+                  <div className="muted">No text snippet available yet — re-process this document to populate.</div>
+                )}
               </div>
             )
           ) : (
@@ -141,11 +145,19 @@ export function DocumentDetailPage() {
 }
 
 function FieldRow({ field }: { field: ExtractedField }) {
-  const valueLabel = field.value === null || field.value === '' ? <span className="muted">— not found</span> : <span>{prettyValue(field.value)}</span>;
+  const value = field.value;
+  let body: ReactElement;
+
+  if (value === null || value === '' || value === '"— not found"') {
+    body = <span className="muted">— not found</span>;
+  } else {
+    body = <FieldValue raw={value} />;
+  }
+
   return (
     <div className="field-row">
       <div className="field-name">{prettyFieldName(field.name)}</div>
-      <div className="field-value">{valueLabel}</div>
+      <div className="field-value">{body}</div>
       <div className="field-confidence">
         <ConfidenceBar value={field.confidence} />
       </div>
@@ -156,19 +168,68 @@ function FieldRow({ field }: { field: ExtractedField }) {
   );
 }
 
-function prettyFieldName(name: string): string {
-  return name
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, (c) => c.toUpperCase());
+function FieldValue({ raw }: { raw: string }) {
+  // Server stringifies JsonElement values into JSON. Try to parse and render
+  // structured; fall back to the raw string for primitives.
+  let parsed: unknown = raw;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return <span>{raw}</span>;
+  }
+
+  if (parsed === null) return <span className="muted">— not found</span>;
+  if (typeof parsed === 'string') return <span>{parsed || <span className="muted">— empty</span>}</span>;
+  if (typeof parsed === 'number' || typeof parsed === 'boolean') return <span>{String(parsed)}</span>;
+
+  if (Array.isArray(parsed)) {
+    if (parsed.length === 0) return <span className="muted">— empty list</span>;
+    return (
+      <div className="value-list">
+        {parsed.map((item, i) => (
+          <div className="value-list-item" key={i}>
+            <ValueObject value={item} />
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (typeof parsed === 'object') {
+    return <ValueObject value={parsed} />;
+  }
+
+  return <span>{String(parsed)}</span>;
 }
 
-function prettyValue(value: string): string {
-  if (value.startsWith('"') && value.endsWith('"') && value.length > 1) {
-    try {
-      return JSON.parse(value);
-    } catch {
-      return value;
-    }
+function ValueObject({ value }: { value: unknown }) {
+  if (value === null) return <span className="muted">— null</span>;
+  if (typeof value !== 'object' || Array.isArray(value)) {
+    return <FieldValue raw={JSON.stringify(value)} />;
   }
-  return value;
+  const entries = Object.entries(value as Record<string, unknown>).filter(
+    ([, v]) => v !== null && v !== '' && v !== undefined,
+  );
+  if (entries.length === 0) return <span className="muted">— empty</span>;
+  return (
+    <div className="value-object">
+      {entries.map(([k, v]) => (
+        <div className="value-object-row" key={k}>
+          <span className="value-object-key">{prettyFieldName(k)}</span>
+          <span className="value-object-val">
+            {typeof v === 'object' ? <ValueObject value={v} /> : String(v)}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function prettyFieldName(name: string): string {
+  return name
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/_/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
