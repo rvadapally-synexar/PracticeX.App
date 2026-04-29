@@ -1,12 +1,45 @@
-import { Button, Card, KpiCard, StatusChip } from '@practicex/design-system';
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Button, Card, KpiCard } from '@practicex/design-system';
+import { analysisApi, type DashboardStats, type Portfolio } from '../lib/api';
 
-const renewals = [
-  ['Apr 30', 'Regence BlueShield amendment', 'Notice window closes in 5d'],
-  ['May 14', 'Olympus scope service renewal', 'Owner review due in 19d'],
-  ['Jun 01', 'Northside Suite 310 lease', 'Renewal watch'],
-];
+type LoadState =
+  | { kind: 'loading' }
+  | { kind: 'error'; message: string }
+  | { kind: 'ready'; stats: DashboardStats; portfolio: Portfolio };
 
 export function CommandCenterPage() {
+  const [state, setState] = useState<LoadState>({ kind: 'loading' });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [stats, portfolio] = await Promise.all([
+          analysisApi.getDashboard(),
+          analysisApi.getPortfolio(),
+        ]);
+        if (!cancelled) setState({ kind: 'ready', stats, portfolio });
+      } catch (err) {
+        if (cancelled) return;
+        setState({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to load.' });
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (state.kind === 'loading') {
+    return <div className="page"><div className="page-subtitle">Loading…</div></div>;
+  }
+  if (state.kind === 'error') {
+    return <div className="page"><div className="banner banner-error">{state.message}</div></div>;
+  }
+
+  const { stats, portfolio } = state;
+  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
   return (
     <div className="page">
       <div className="crumb">
@@ -16,49 +49,79 @@ export function CommandCenterPage() {
       </div>
       <header className="page-head">
         <div>
-          <div className="eyebrow"><span className="eyebrow-dot" />Operations overview · Apr 25, 2026</div>
+          <div className="eyebrow"><span className="eyebrow-dot" />Operations overview · {today}</div>
           <h1 className="page-title">Command center</h1>
-          <div className="page-subtitle">Everything you signed. What renews. What needs action this month.</div>
+          <div className="page-subtitle">
+            What we've read from your filing cabinet so far. Click anywhere to drill in.
+          </div>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <Button variant="secondary">View all contracts</Button>
-          <Button>Upload documents</Button>
+          <Link to="/portfolio"><Button variant="secondary">View portfolio</Button></Link>
+          <Link to="/sources"><Button>Upload documents</Button></Link>
         </div>
       </header>
+
       <section className="kpi-grid">
-        <KpiCard label="Active contracts" value="20" helper="Across 5 facilities" />
-        <KpiCard label="Renew in 60 days" value="8" helper="3 need owner action" tone="accent" />
-        <KpiCard label="Needs attention" value="6" helper="Low-confidence or overdue" tone="warn" />
-        <KpiCard label="Tracked annual value" value="$2.4M" helper="Reviewed documents only" />
+        <KpiCard
+          label="Documents processed"
+          value={stats.documents.toString()}
+          helper={`${portfolio.totalPages} pages · ${stats.totalSizeMb.toFixed(1)} MB`}
+        />
+        <KpiCard
+          label="Candidates extracted"
+          value={stats.candidates.toString()}
+          helper={`Across ${stats.ingestionBatches} ingestion batch${stats.ingestionBatches === 1 ? '' : 'es'}`}
+          tone="accent"
+        />
+        <KpiCard
+          label="Awaiting review"
+          value={stats.reviewQueueDepth.toString()}
+          helper={stats.reviewQueueDepth === 0 ? 'Queue empty' : 'Confirm or correct extractions'}
+          tone={stats.reviewQueueDepth > 0 ? 'warn' : undefined}
+        />
+        <KpiCard
+          label="Doc Intelligence pages"
+          value={stats.docIntelPagesProcessed.toString()}
+          helper={`Azure cost · $${stats.estimatedDocIntelCostUsd.toFixed(2)}`}
+        />
       </section>
+
       <section className="grid-2">
-        <Card title="Upcoming renewals & notice windows">
-          {renewals.map((row) => (
-            <div className="source-row" key={row[1]} style={{ gridTemplateColumns: '72px 1fr 150px' }}>
-              <div className="mono-label">{row[0]}</div>
-              <strong>{row[1]}</strong>
-              <StatusChip tone={row[2].includes('5d') ? 'accent' : 'ok'}>{row[2]}</StatusChip>
+        <Card title="Document families">
+          {portfolio.families.length === 0 ? (
+            <div className="muted">No documents yet. Upload some to get started.</div>
+          ) : (
+            <div className="doc-table">
+              {portfolio.families.map((f) => (
+                <div key={f.family} className="doc-row" style={{ gridTemplateColumns: 'minmax(0, 1.4fr) 80px 90px 90px', cursor: 'default' }}>
+                  <div className="doc-row-name">{f.family.replace(/_/g, ' ')}</div>
+                  <div className="doc-row-meta">{f.documentCount} doc{f.documentCount === 1 ? '' : 's'}</div>
+                  <div className="doc-row-meta">{f.totalPages} pgs</div>
+                  <div className="doc-row-meta">{f.totalSizeMb.toFixed(1)} MB</div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
         </Card>
-        <Card title="Alerts">
-          <div className="source-row" style={{ gridTemplateColumns: '1fr 96px' }}>
-            <div>
-              <strong>3 extracted fields flagged</strong>
-              <div className="muted">Regence BlueShield Amendment #3</div>
+        <Card title="Recent candidates">
+          {portfolio.documents.length === 0 ? (
+            <div className="muted">No candidates yet.</div>
+          ) : (
+            <div className="doc-table">
+              {portfolio.documents.slice(0, 6).map((d) => (
+                <Link key={d.documentAssetId} to={`/portfolio/${d.documentAssetId}`} className="doc-row" style={{ textDecoration: 'none', gridTemplateColumns: 'minmax(0, 1.4fr) 1fr 80px' }}>
+                  <div className="doc-row-name" title={d.fileName}>{d.fileName}</div>
+                  <div className="doc-row-type">
+                    {d.candidateType.replace(/_/g, ' ')}
+                    {d.extractedSubtype ? <span className="muted"> · {d.extractedSubtype}</span> : null}
+                  </div>
+                  <div className="doc-row-meta">{d.pageCount ?? '—'} pg</div>
+                </Link>
+              ))}
             </div>
-            <Button variant="secondary">Review</Button>
-          </div>
-          <div className="source-row" style={{ gridTemplateColumns: '1fr 96px' }}>
-            <div>
-              <strong>Missing accountable owner</strong>
-              <div className="muted">Lease amendment needs assignment</div>
-            </div>
-            <Button variant="secondary">Assign</Button>
-          </div>
+          )}
         </Card>
       </section>
     </div>
   );
 }
-

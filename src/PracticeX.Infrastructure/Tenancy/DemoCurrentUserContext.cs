@@ -27,12 +27,18 @@ public sealed class DemoCurrentUserContext : ICurrentUserContext
             dbContext.Tenants.Add(new Tenant
             {
                 Id = DemoTenantId,
-                Name = "PracticeX Demo Group",
+                Name = "PracticeX",
                 Status = "active",
                 DataRegion = "us",
                 BaaStatus = "signed",
                 CreatedAt = DateTimeOffset.UtcNow
             });
+        }
+        else if (tenant.Name == "PracticeX Demo Group")
+        {
+            // Backfill old demo seed name on existing rows.
+            tenant.Name = "PracticeX";
+            tenant.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == DemoUserId, cancellationToken);
@@ -42,11 +48,17 @@ public sealed class DemoCurrentUserContext : ICurrentUserContext
             {
                 Id = DemoUserId,
                 TenantId = DemoTenantId,
-                Email = "demo@practicex.com",
-                Name = "Jordan Okafor",
+                Email = "rvadapally@practicex.ai",
+                Name = "Raghuram Vadapally",
                 Status = "active",
                 CreatedAt = DateTimeOffset.UtcNow
             });
+        }
+        else if (user.Name == "Jordan Okafor" || user.Email == "demo@practicex.com")
+        {
+            user.Name = "Raghuram Vadapally";
+            user.Email = "rvadapally@practicex.ai";
+            user.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);

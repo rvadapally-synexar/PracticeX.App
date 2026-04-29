@@ -1,25 +1,70 @@
-import { Bell, Brain, Building2, Clock, FileStack, Home, Search, Settings, ShieldAlert, Sparkles, Upload, Users, Zap } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import {
+  Bell,
+  Brain,
+  Building2,
+  Clock,
+  FileStack,
+  Home,
+  Search,
+  Settings,
+  ShieldAlert,
+  Sparkles,
+  Upload,
+  Zap,
+} from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
+import { analysisApi, type CurrentUser, type DashboardStats, type Facility } from '../lib/api';
 
-const facilities = [
-  { code: 'NOR', name: 'Northside' },
-  { code: 'LKV', name: 'Lakeview GI' },
-  { code: 'EVG', name: 'Evergreen ASC' },
-  { code: 'PUG', name: 'Puget' },
-];
-
-const workspaceItems = [
-  { to: '/dashboard', label: 'Command center', icon: Home },
-  { to: '/portfolio', label: 'Portfolio intel', icon: Brain },
-  { to: '/contracts', label: 'Contracts', icon: FileStack, count: 20 },
-  { to: '/renewals', label: 'Renewals', icon: Clock, count: 8 },
-  { to: '/alerts', label: 'Alerts', icon: ShieldAlert, count: 6 },
-  { to: '/obligations', label: 'Obligations', icon: Sparkles, count: 6 },
-  { to: '/review', label: 'Review queue', icon: Sparkles, count: 4 },
-  { to: '/sources', label: 'Source discovery', icon: Upload },
-];
+type WorkspaceItem = {
+  to: string;
+  label: string;
+  icon: typeof Home;
+  count?: number;
+};
 
 export function AppShell() {
+  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [facilities, setFacilities] = useState<Facility[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [u, s, f] = await Promise.all([
+          analysisApi.getCurrentUser().catch(() => null),
+          analysisApi.getDashboard().catch(() => null),
+          analysisApi.getFacilities().catch(() => []),
+        ]);
+        if (cancelled) return;
+        if (u) setUser(u);
+        if (s) setStats(s);
+        if (f) setFacilities(f);
+      } catch {
+        // Sidebar gracefully degrades when API isn't reachable yet.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const workspaceItems: WorkspaceItem[] = [
+    { to: '/dashboard', label: 'Command center', icon: Home },
+    { to: '/portfolio', label: 'Portfolio intel', icon: Brain, count: stats?.documents },
+    { to: '/contracts', label: 'Contracts', icon: FileStack, count: stats?.contractsTracked },
+    { to: '/renewals', label: 'Renewals', icon: Clock },
+    { to: '/alerts', label: 'Alerts', icon: ShieldAlert },
+    { to: '/obligations', label: 'Obligations', icon: Sparkles },
+    { to: '/review', label: 'Review queue', icon: Sparkles, count: stats?.reviewQueueDepth },
+    { to: '/sources', label: 'Source discovery', icon: Upload },
+  ];
+
+  const userName = user?.name ?? '—';
+  const userInitials = user?.initials ?? '?';
+  const tenantName = user?.tenantName ?? 'Loading…';
+
   return (
     <div className="app" data-theme="operator" data-density="comfortable">
       <header className="topbar">
@@ -30,12 +75,12 @@ export function AppShell() {
         <button className="facility-switch" type="button">
           <Building2 size={13} />
           <span className="mono-label">Facility</span>
-          <strong>All facilities</strong>
+          <strong>{facilities.length === 0 ? 'All facilities' : `${facilities.length} facilities`}</strong>
         </button>
         <div className="topbar-spacer" />
         <div className="cmdk" role="search">
           <Search size={13} />
-          <span>Search contracts, counterparties, facilities...</span>
+          <span>Search contracts, counterparties, facilities…</span>
           <kbd>⌘K</kbd>
         </div>
         <button className="px-icon-button" type="button" aria-label="Notifications">
@@ -44,7 +89,7 @@ export function AppShell() {
         <button className="px-icon-button" type="button" aria-label="Settings">
           <Settings size={15} />
         </button>
-        <div className="px-avatar" title="Jordan Okafor">JO</div>
+        <div className="px-avatar" title={userName}>{userInitials}</div>
       </header>
       <aside className="sidebar">
         <section className="nav-section">
@@ -53,25 +98,29 @@ export function AppShell() {
             <NavLink className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`} key={item.to} to={item.to}>
               <item.icon size={14} />
               <span>{item.label}</span>
-              {item.count ? <span className="nav-count">{item.count}</span> : null}
+              {typeof item.count === 'number' && item.count > 0 ? (
+                <span className="nav-count">{item.count}</span>
+              ) : null}
             </NavLink>
           ))}
         </section>
-        <section className="nav-section">
-          <h2 className="section-label">Facilities</h2>
-          <div className="facility-list">
-            {facilities.map((facility) => (
-              <button className="facility-pill" key={facility.code} type="button">
-                <span className="facility-code">{facility.code}</span>
-                <span>{facility.name}</span>
+        {facilities.length > 0 ? (
+          <section className="nav-section">
+            <h2 className="section-label">Facilities</h2>
+            <div className="facility-list">
+              {facilities.map((facility) => (
+                <button className="facility-pill" key={facility.id} type="button">
+                  <span className="facility-code">{facility.code}</span>
+                  <span>{facility.name}</span>
+                </button>
+              ))}
+              <button className="facility-pill active" type="button">
+                <span className="facility-code">ALL</span>
+                <span>Portfolio view</span>
               </button>
-            ))}
-            <button className="facility-pill active" type="button">
-              <span className="facility-code">ALL</span>
-              <span>Portfolio view</span>
-            </button>
-          </div>
-        </section>
+            </div>
+          </section>
+        ) : null}
         <section className="nav-section">
           <h2 className="section-label">Intelligence · locked</h2>
           <NavLink className="nav-item" to="/rates">
@@ -81,17 +130,14 @@ export function AppShell() {
           </NavLink>
         </section>
         <div style={{ flex: 1 }} />
-        <section className="nav-section">
-          <h2 className="section-label">Admin</h2>
-          <NavLink className="nav-item" to="/admin">
-            <Users size={14} />
-            <span>Team & roles</span>
-          </NavLink>
-        </section>
         <div className="plan-card">
-          <div className="section-label" style={{ marginLeft: 0 }}>Plan</div>
-          <strong>Growth · Basic</strong>
-          <div className="muted" style={{ marginTop: 4 }}>100 contracts · 5 facilities</div>
+          <div className="section-label" style={{ marginLeft: 0 }}>Tenant</div>
+          <strong>{tenantName}</strong>
+          {stats ? (
+            <div className="muted" style={{ marginTop: 4 }}>
+              {stats.documents} docs · {stats.totalSizeMb.toFixed(1)} MB processed
+            </div>
+          ) : null}
         </div>
       </aside>
       <main className="main">
@@ -100,4 +146,3 @@ export function AppShell() {
     </div>
   );
 }
-

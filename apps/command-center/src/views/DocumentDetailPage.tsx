@@ -69,7 +69,7 @@ export function DocumentDetailPage() {
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           {detail.isExecuted ? <StatusChip tone="ok">signed</StatusChip> : null}
           {detail.isTemplate ? <StatusChip tone="warn">template / unsigned</StatusChip> : null}
-          <StatusChip tone={detail.extractionStatus === 'completed' ? 'ok' : 'neutral'}>
+          <StatusChip tone={detail.extractionStatus === 'completed' ? 'ok' : 'muted'}>
             {detail.extractionStatus ?? 'pending'}
           </StatusChip>
         </div>

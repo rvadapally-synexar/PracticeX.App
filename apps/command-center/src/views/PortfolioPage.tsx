@@ -188,7 +188,7 @@ function DocumentRow({ doc }: { doc: PortfolioDocument }) {
       ? 'ok'
       : doc.extractionStatus === 'no_extractor'
       ? 'warn'
-      : 'neutral';
+      : 'muted';
 
   const statusLabel =
     doc.extractionStatus === 'completed'

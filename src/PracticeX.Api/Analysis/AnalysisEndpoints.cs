@@ -23,8 +23,127 @@ public static class AnalysisEndpoints
         group.MapGet("/portfolio", GetPortfolio).WithName("GetPortfolio");
         group.MapGet("/documents/{assetId:guid}", GetDocumentDetail).WithName("GetDocumentDetail");
         group.MapGet("/insights", GetCrossDocumentInsights).WithName("GetCrossDocumentInsights");
+        group.MapGet("/dashboard", GetDashboard).WithName("GetDashboard");
+        group.MapGet("/review-queue", GetReviewQueue).WithName("GetReviewQueue");
+        group.MapGet("/me", GetCurrentUser).WithName("GetCurrentUser");
+        group.MapGet("/facilities", GetFacilities).WithName("GetFacilities");
 
         return routes;
+    }
+
+    private static async Task<Ok<DashboardResponse>> GetDashboard(
+        PracticeXDbContext db,
+        ICurrentUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = userContext.TenantId;
+        var totalDocs = await db.DocumentAssets.CountAsync(a => a.TenantId == tenantId, cancellationToken);
+        var totalCandidates = await db.DocumentCandidates.CountAsync(c => c.TenantId == tenantId, cancellationToken);
+        var pendingReview = await db.DocumentCandidates.CountAsync(
+            c => c.TenantId == tenantId && c.Status == DocumentCandidateStatus.PendingReview, cancellationToken);
+        var batches = await db.IngestionBatches.CountAsync(b => b.TenantId == tenantId, cancellationToken);
+        var contractsTracked = await db.Contracts.CountAsync(x => x.TenantId == tenantId, cancellationToken);
+        var totalSize = await db.DocumentAssets.Where(a => a.TenantId == tenantId).SumAsync(a => (long?)a.SizeBytes, cancellationToken) ?? 0L;
+        var docIntelPages = await db.DocumentAssets.Where(a => a.TenantId == tenantId).SumAsync(a => (int?)a.LayoutPageCount, cancellationToken) ?? 0;
+
+        return TypedResults.Ok(new DashboardResponse(
+            TenantId: tenantId,
+            Documents: totalDocs,
+            Candidates: totalCandidates,
+            ContractsTracked: contractsTracked,
+            ReviewQueueDepth: pendingReview,
+            IngestionBatches: batches,
+            TotalSizeMb: Math.Round(totalSize / 1024m / 1024m, 2),
+            DocIntelPagesProcessed: docIntelPages,
+            EstimatedDocIntelCostUsd: Math.Round(docIntelPages * 0.001m, 4)
+        ));
+    }
+
+    private static async Task<Ok<IReadOnlyList<ReviewQueueItem>>> GetReviewQueue(
+        PracticeXDbContext db,
+        ICurrentUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var tenantId = userContext.TenantId;
+        var rows = await (
+            from c in db.DocumentCandidates
+            join a in db.DocumentAssets on c.DocumentAssetId equals a.Id
+            join s in db.SourceObjects on a.SourceObjectId equals s.Id into sj
+            from s in sj.DefaultIfEmpty()
+            where c.TenantId == tenantId && c.Status == DocumentCandidateStatus.PendingReview
+            orderby c.CreatedAt descending
+            select new
+            {
+                c.Id,
+                c.DocumentAssetId,
+                c.CandidateType,
+                c.Confidence,
+                c.CreatedAt,
+                c.OriginFilename,
+                a.ExtractedSubtype,
+                a.ExtractionStatus,
+                a.LayoutProvider,
+                AssetCreatedAt = a.CreatedAt,
+                SourceName = s != null ? s.Name : null
+            }
+        ).Take(50).ToListAsync(cancellationToken);
+
+        var items = rows.Select(r => new ReviewQueueItem(
+            CandidateId: r.Id,
+            DocumentAssetId: r.DocumentAssetId,
+            FileName: r.SourceName ?? r.OriginFilename ?? "(unnamed)",
+            CandidateType: r.CandidateType,
+            ExtractedSubtype: r.ExtractedSubtype,
+            Confidence: r.Confidence,
+            UsedDocIntelligence: r.LayoutProvider != null,
+            ExtractionStatus: r.ExtractionStatus,
+            CreatedAt: r.CreatedAt
+        )).ToList();
+
+        return TypedResults.Ok((IReadOnlyList<ReviewQueueItem>)items);
+    }
+
+    private static async Task<Ok<CurrentUserResponse>> GetCurrentUser(
+        PracticeXDbContext db,
+        ICurrentUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var user = await db.Users
+            .Where(u => u.Id == userContext.UserId)
+            .Select(u => new { u.Id, u.Name, u.Email, u.TenantId })
+            .FirstOrDefaultAsync(cancellationToken);
+        var tenant = await db.Tenants
+            .Where(t => t.Id == userContext.TenantId)
+            .Select(t => new { t.Id, t.Name })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var name = user?.Name ?? "Unknown";
+        var initials = string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+            .Take(2)
+            .Select(w => w.Length > 0 ? w[0] : ' '))
+            .ToUpperInvariant();
+
+        return TypedResults.Ok(new CurrentUserResponse(
+            UserId: user?.Id ?? userContext.UserId,
+            Name: name,
+            Email: user?.Email ?? "",
+            Initials: string.IsNullOrWhiteSpace(initials) ? "??" : initials,
+            TenantId: tenant?.Id ?? userContext.TenantId,
+            TenantName: tenant?.Name ?? "Unknown"
+        ));
+    }
+
+    private static async Task<Ok<IReadOnlyList<FacilitySummary>>> GetFacilities(
+        PracticeXDbContext db,
+        ICurrentUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var rows = await db.Facilities
+            .Where(f => f.TenantId == userContext.TenantId)
+            .OrderBy(f => f.Name)
+            .Select(f => new FacilitySummary(f.Id, f.Code, f.Name, f.Status))
+            .ToListAsync(cancellationToken);
+        return TypedResults.Ok((IReadOnlyList<FacilitySummary>)rows);
     }
 
     private static async Task<Ok<PortfolioResponse>> GetPortfolio(
@@ -389,3 +508,39 @@ public sealed record CrossDocumentInsights(
 public sealed record AmendmentChain(
     string ParentDocumentTitle,
     IReadOnlyList<string> Amendments);
+
+public sealed record DashboardResponse(
+    Guid TenantId,
+    int Documents,
+    int Candidates,
+    int ContractsTracked,
+    int ReviewQueueDepth,
+    int IngestionBatches,
+    decimal TotalSizeMb,
+    int DocIntelPagesProcessed,
+    decimal EstimatedDocIntelCostUsd);
+
+public sealed record ReviewQueueItem(
+    Guid CandidateId,
+    Guid DocumentAssetId,
+    string FileName,
+    string CandidateType,
+    string? ExtractedSubtype,
+    decimal Confidence,
+    bool UsedDocIntelligence,
+    string? ExtractionStatus,
+    DateTimeOffset CreatedAt);
+
+public sealed record CurrentUserResponse(
+    Guid UserId,
+    string Name,
+    string Email,
+    string Initials,
+    Guid TenantId,
+    string TenantName);
+
+public sealed record FacilitySummary(
+    Guid Id,
+    string Code,
+    string Name,
+    string Status);

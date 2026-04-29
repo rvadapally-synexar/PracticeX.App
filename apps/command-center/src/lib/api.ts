@@ -356,11 +356,65 @@ export interface PortfolioInsights {
   documentAddresses: Record<string, string>;
 }
 
+export interface DashboardStats {
+  tenantId: string;
+  documents: number;
+  candidates: number;
+  contractsTracked: number;
+  reviewQueueDepth: number;
+  ingestionBatches: number;
+  totalSizeMb: number;
+  docIntelPagesProcessed: number;
+  estimatedDocIntelCostUsd: number;
+}
+
+export interface ReviewQueueItem {
+  candidateId: string;
+  documentAssetId: string;
+  fileName: string;
+  candidateType: string;
+  extractedSubtype: string | null;
+  confidence: number;
+  usedDocIntelligence: boolean;
+  extractionStatus: string | null;
+  createdAt: string;
+}
+
+export interface CurrentUser {
+  userId: string;
+  name: string;
+  email: string;
+  initials: string;
+  tenantId: string;
+  tenantName: string;
+}
+
+export interface Facility {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+}
+
 export const analysisApi = {
   getPortfolio: () => request<Portfolio>('/analysis/portfolio'),
   getInsights: () => request<PortfolioInsights>('/analysis/insights'),
   getDocument: (assetId: string) => request<DocumentDetail>(`/analysis/documents/${assetId}`),
+  getDashboard: () => request<DashboardStats>('/analysis/dashboard'),
+  getReviewQueue: () => request<ReviewQueueItem[]>('/analysis/review-queue'),
+  getCurrentUser: () => request<CurrentUser>('/analysis/me'),
+  getFacilities: () => request<Facility[]>('/analysis/facilities'),
 };
+
+export function readableRelativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  const now = Date.now();
+  const sec = Math.max(0, Math.floor((now - then) / 1000));
+  if (sec < 60) return 'just now';
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`;
+  return `${Math.floor(sec / 86400)}d ago`;
+}
 
 export function readableFamily(family: string): string {
   return {
