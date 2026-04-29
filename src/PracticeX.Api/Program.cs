@@ -31,7 +31,22 @@ builder.Services.AddCors(options =>
     {
         var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
             ?? ["http://localhost:5173", "https://localhost:5173"];
-        policy.WithOrigins(origins).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
+        var patterns = builder.Configuration.GetSection("Cors:AllowedOriginPatterns").Get<string[]>()
+            ?? Array.Empty<string>();
+
+        // Cloudflare Pages preview URLs follow https://<branch>.<project>.pages.dev,
+        // so an exact origin list won't cover them. The pattern matcher accepts
+        // simple "*" wildcards in any subdomain position.
+        policy.SetIsOriginAllowed(origin =>
+        {
+            if (origins.Contains(origin, StringComparer.OrdinalIgnoreCase)) return true;
+            foreach (var pattern in patterns)
+            {
+                var rx = "^" + System.Text.RegularExpressions.Regex.Escape(pattern).Replace("\\*", "[^.]+") + "$";
+                if (System.Text.RegularExpressions.Regex.IsMatch(origin, rx)) return true;
+            }
+            return false;
+        }).AllowAnyHeader().AllowAnyMethod().AllowCredentials();
     });
 });
 
