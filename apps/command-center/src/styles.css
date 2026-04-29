@@ -358,3 +358,194 @@ select {
   width: 34px;
 }
 
+/* ============================================================================
+   Slice 9: Portfolio intelligence + Document detail
+   ============================================================================ */
+
+.family-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  margin-top: 18px;
+  margin-bottom: 18px;
+}
+
+.family-card-head {
+  align-items: flex-start;
+  display: flex;
+  justify-content: space-between;
+}
+
+.family-card-count {
+  font-size: 28px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
+.doc-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-row {
+  align-items: center;
+  border-top: 1px solid var(--px-line-2);
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr) 100px 110px;
+  padding: 12px 0;
+  transition: background 0.15s ease;
+}
+
+.doc-row:first-of-type {
+  border-top: none;
+}
+
+.doc-row:hover {
+  background: var(--px-bg-1);
+}
+
+.doc-row-name {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-row-type {
+  font-size: 12px;
+}
+
+.doc-row-meta {
+  color: var(--px-fg-muted);
+  font-size: 12px;
+}
+
+.insights-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.insight-block {
+  border-top: 1px solid var(--px-line-2);
+  padding-top: 12px;
+}
+
+.insight-block:first-of-type {
+  border-top: none;
+  padding-top: 0;
+}
+
+.entity-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.entity-list li {
+  font-size: 13px;
+  padding: 4px 0;
+}
+
+.chain {
+  border-left: 2px solid var(--px-green);
+  margin-top: 8px;
+  padding-left: 10px;
+}
+
+.chain-parent {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.chain-amendment {
+  color: var(--px-fg-muted);
+  font-size: 12px;
+  padding-top: 2px;
+}
+
+.field-grid {
+  display: flex;
+  flex-direction: column;
+}
+
+.field-row {
+  border-top: 1px solid var(--px-line-2);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 180px minmax(0, 1fr) 80px;
+  grid-template-rows: auto auto;
+  padding: 12px 0;
+}
+
+.field-row:first-of-type {
+  border-top: none;
+}
+
+.field-name {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+
+.field-value {
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.field-confidence {
+  align-self: center;
+}
+
+.field-citation {
+  font-size: 11px;
+  grid-column: 2 / -1;
+  margin-top: -4px;
+}
+
+.reason-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.reason-pill {
+  background: var(--px-bg-1);
+  border: 1px solid var(--px-line-2);
+  border-radius: 6px;
+  font-family: var(--px-mono, ui-monospace, monospace);
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.layout-snippet {
+  background: var(--px-bg-1);
+  border: 1px solid var(--px-line-2);
+  border-radius: 8px;
+  font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 0;
+  max-height: 360px;
+  overflow: auto;
+  padding: 12px;
+  white-space: pre-wrap;
+}
+
+.banner {
+  border-radius: var(--px-radius);
+  margin-bottom: 16px;
+  padding: 12px 16px;
+}
+
+.banner-error {
+  background: #fff1f0;
+  border: 1px solid #ffccc7;
+  color: #cf1322;
+}
+

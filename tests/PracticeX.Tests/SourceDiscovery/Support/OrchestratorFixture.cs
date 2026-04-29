@@ -79,7 +79,8 @@ internal sealed class OrchestratorFixture : IDisposable
             new EmploymentExtractor(),
             new NdaExtractor(),
             new CorporateExtractor(),
-            new LeaseExtractor()
+            new LeaseExtractor(),
+            new CallCoverageExtractor()
         };
 
         Orchestrator = new IngestionOrchestrator(

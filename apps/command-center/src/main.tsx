@@ -5,6 +5,8 @@ import '@practicex/design-system/styles.css';
 import './styles.css';
 import { AppShell } from './shell/AppShell';
 import { CommandCenterPage } from './views/CommandCenterPage';
+import { DocumentDetailPage } from './views/DocumentDetailPage';
+import { PortfolioPage } from './views/PortfolioPage';
 import { ReviewQueuePage } from './views/ReviewQueuePage';
 import { SourceDiscoveryPage } from './views/SourceDiscoveryPage';
 
@@ -17,6 +19,8 @@ createRoot(document.getElementById('root') as HTMLElement).render(
           <Route path="/dashboard" element={<CommandCenterPage />} />
           <Route path="/review" element={<ReviewQueuePage />} />
           <Route path="/sources" element={<SourceDiscoveryPage />} />
+          <Route path="/portfolio" element={<PortfolioPage />} />
+          <Route path="/portfolio/:assetId" element={<DocumentDetailPage />} />
           <Route path="/contracts" element={<CommandCenterPage />} />
           <Route path="/renewals" element={<CommandCenterPage />} />
           <Route path="/alerts" element={<CommandCenterPage />} />

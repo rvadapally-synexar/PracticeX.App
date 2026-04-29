@@ -253,11 +253,126 @@ export function readableCandidateType(type: string): string {
     payer_contract: 'Payer contract',
     vendor_contract: 'Vendor agreement',
     lease: 'Lease',
+    lease_amendment: 'Lease amendment',
+    lease_loi: 'Lease LOI',
     employee_agreement: 'Employee agreement',
     processor_agreement: 'Processor agreement',
     amendment: 'Amendment',
     fee_schedule: 'Fee schedule',
+    nda: 'Non-disclosure agreement',
+    bylaws: 'Bylaws',
+    call_coverage_agreement: 'Call coverage agreement',
+    service_agreement: 'Service agreement',
     other: 'Other',
     unknown: 'Unclassified',
   }[type] ?? type;
+}
+
+// ==========================================================================
+// Slice 9: premium analysis surface (/api/analysis/*)
+// ==========================================================================
+
+export interface PortfolioFamily {
+  family: string;
+  documentCount: number;
+  totalPages: number;
+  totalSizeMb: number;
+  docIntelPagesUsed: number;
+  documents: string[];
+}
+
+export interface PortfolioDocument {
+  documentAssetId: string;
+  documentCandidateId: string;
+  fileName: string;
+  candidateType: string;
+  extractedSubtype: string | null;
+  confidence: number;
+  pageCount: number | null;
+  sizeBytes: number;
+  hasTextLayer: boolean | null;
+  usedDocIntelligence: boolean;
+  layoutPageCount: number | null;
+  extractionStatus: string | null;
+  extractionSchemaVersion: string | null;
+  isTemplate: boolean | null;
+  isExecuted: boolean | null;
+  createdAt: string;
+}
+
+export interface Portfolio {
+  tenantId: string;
+  totalDocuments: number;
+  totalPages: number;
+  totalSizeMb: number;
+  docIntelPagesProcessed: number;
+  estimatedDocIntelCostUsd: number;
+  families: PortfolioFamily[];
+  documents: PortfolioDocument[];
+}
+
+export interface ExtractedField {
+  name: string;
+  value: string | null;
+  confidence: number;
+  sourceCitation: string | null;
+}
+
+export interface DocumentDetail {
+  documentAssetId: string;
+  fileName: string;
+  candidateType: string | null;
+  confidence: number | null;
+  extractedSubtype: string | null;
+  extractedSchemaVersion: string | null;
+  extractorName: string | null;
+  extractionStatus: string | null;
+  isTemplate: boolean | null;
+  isExecuted: boolean | null;
+  pageCount: number | null;
+  hasTextLayer: boolean | null;
+  layoutProvider: string | null;
+  layoutModel: string | null;
+  layoutPageCount: number | null;
+  layoutSnippet: string | null;
+  extractedFields: {
+    fields: ExtractedField[];
+    reasonCodes: string[];
+  } | null;
+  createdAt: string;
+}
+
+export interface AmendmentChain {
+  parentDocumentTitle: string;
+  amendments: string[];
+}
+
+export interface PortfolioInsights {
+  totalRentableSqft: number | null;
+  uniqueLandlords: string[];
+  uniqueTenants: string[];
+  uniqueCounterparties: string[];
+  amendmentChains: AmendmentChain[];
+  documentAddresses: Record<string, string>;
+}
+
+export const analysisApi = {
+  getPortfolio: () => request<Portfolio>('/analysis/portfolio'),
+  getInsights: () => request<PortfolioInsights>('/analysis/insights'),
+  getDocument: (assetId: string) => request<DocumentDetail>(`/analysis/documents/${assetId}`),
+};
+
+export function readableFamily(family: string): string {
+  return {
+    lease: 'Real-estate leases',
+    employment_governance: 'Employment & governance',
+    nda: 'NDAs',
+    governance: 'Corporate governance',
+    scheduling: 'Scheduling agreements',
+    vendor_services: 'Vendor & services',
+    payer: 'Payer contracts',
+    compliance: 'Compliance / BAA',
+    fee_schedule: 'Fee schedules',
+    unclassified: 'Unclassified',
+  }[family] ?? family;
 }

@@ -79,6 +79,7 @@ public static class DependencyInjection
         services.AddSingleton<IContractFieldExtractor, NdaExtractor>();
         services.AddSingleton<IContractFieldExtractor, CorporateExtractor>();
         services.AddSingleton<IContractFieldExtractor, LeaseExtractor>();
+        services.AddSingleton<IContractFieldExtractor, CallCoverageExtractor>();
         services.AddSingleton<IDocumentDiscoveryPipeline, DefaultDocumentDiscoveryPipeline>();
         services.AddSingleton<PdfComplexityProfiler>();
         services.AddSingleton<ExcelComplexityProfiler>();

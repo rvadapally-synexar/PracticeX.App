@@ -1,4 +1,4 @@
-import { Bell, Building2, Clock, FileStack, Home, Search, Settings, ShieldAlert, Sparkles, Upload, Users, Zap } from 'lucide-react';
+import { Bell, Brain, Building2, Clock, FileStack, Home, Search, Settings, ShieldAlert, Sparkles, Upload, Users, Zap } from 'lucide-react';
 import { NavLink, Outlet } from 'react-router-dom';
 
 const facilities = [
@@ -10,6 +10,7 @@ const facilities = [
 
 const workspaceItems = [
   { to: '/dashboard', label: 'Command center', icon: Home },
+  { to: '/portfolio', label: 'Portfolio intel', icon: Brain },
   { to: '/contracts', label: 'Contracts', icon: FileStack, count: 20 },
   { to: '/renewals', label: 'Renewals', icon: Clock, count: 8 },
   { to: '/alerts', label: 'Alerts', icon: ShieldAlert, count: 6 },
