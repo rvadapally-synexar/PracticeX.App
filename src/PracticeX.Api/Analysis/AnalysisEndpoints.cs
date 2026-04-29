@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using PracticeX.Application.Common;
+using PracticeX.Application.SourceDiscovery.Storage;
 using PracticeX.Domain.Documents;
 using PracticeX.Infrastructure.Persistence;
 
@@ -22,6 +23,7 @@ public static class AnalysisEndpoints
 
         group.MapGet("/portfolio", GetPortfolio).WithName("GetPortfolio");
         group.MapGet("/documents/{assetId:guid}", GetDocumentDetail).WithName("GetDocumentDetail");
+        group.MapGet("/documents/{assetId:guid}/content", GetDocumentContent).WithName("GetDocumentContent");
         group.MapGet("/insights", GetCrossDocumentInsights).WithName("GetCrossDocumentInsights");
         group.MapGet("/dashboard", GetDashboard).WithName("GetDashboard");
         group.MapGet("/review-queue", GetReviewQueue).WithName("GetReviewQueue");
@@ -29,6 +31,49 @@ public static class AnalysisEndpoints
         group.MapGet("/facilities", GetFacilities).WithName("GetFacilities");
 
         return routes;
+    }
+
+    private static async Task<IResult> GetDocumentContent(
+        Guid assetId,
+        PracticeXDbContext db,
+        IDocumentStorage storage,
+        ICurrentUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var asset = await db.DocumentAssets
+            .FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == userContext.TenantId, cancellationToken);
+        if (asset is null) return Results.NotFound();
+
+        string fileName = "document";
+        if (asset.SourceObjectId.HasValue)
+        {
+            var src = await db.SourceObjects
+                .Where(s => s.Id == asset.SourceObjectId.Value)
+                .Select(s => s.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!string.IsNullOrWhiteSpace(src)) fileName = src!;
+        }
+
+        Stream stream;
+        try
+        {
+            stream = await storage.OpenReadAsync(asset.StorageUri, cancellationToken);
+        }
+        catch (FileNotFoundException)
+        {
+            return Results.NotFound();
+        }
+
+        // Results.File with a fileDownloadName forces Content-Disposition: attachment,
+        // which makes browsers download instead of rendering inline. We want PDFs
+        // embedded in iframes, so use Results.Stream and set the filename hint via
+        // a custom inline disposition.
+        var safeName = fileName.Replace("\"", "");
+        return Results.Stream(
+            stream,
+            asset.MimeType,
+            fileDownloadName: null,
+            enableRangeProcessing: true);
     }
 
     private static async Task<Ok<DashboardResponse>> GetDashboard(
