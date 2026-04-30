@@ -335,7 +335,7 @@ function InsightsPanel({ insights }: { insights: PortfolioInsights }) {
 type BriefState =
   | { kind: 'loading' }
   | { kind: 'absent' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error'; message: string; status?: number }
   | { kind: 'ready'; brief: PortfolioBriefDto };
 
 function PortfolioBriefSection() {
@@ -343,9 +343,11 @@ function PortfolioBriefSection() {
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
+    setState({ kind: 'loading' });
     (async () => {
       try {
         const brief = await analysisApi.getPortfolioBrief();
@@ -353,14 +355,18 @@ function PortfolioBriefSection() {
       } catch (err) {
         if (cancelled) return;
         const status = (err as { status?: number } | undefined)?.status;
+        const detail =
+          (err as { detail?: string } | undefined)?.detail ??
+          (err as Error)?.message ??
+          'unknown error';
         if (status === 404) setState({ kind: 'absent' });
-        else setState({ kind: 'error', message: 'Failed to load Practice Intelligence Brief.' });
+        else setState({ kind: 'error', message: detail, status });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   async function generate() {
     setGenerating(true);
@@ -411,7 +417,24 @@ function PortfolioBriefSection() {
   if (state.kind === 'error') {
     return (
       <section className="portfolio-brief-card">
-        <div className="banner banner-error">{state.message}</div>
+        <Card
+          eyebrow="Premium · Cross-document synthesis"
+          title="Practice Intelligence Brief"
+          actions={
+            <Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
+          }
+        >
+          <div className="banner banner-error" style={{ marginBottom: 8 }}>
+            Couldn't load the Practice Intelligence Brief
+            {state.status ? ` (HTTP ${state.status})` : ''}.
+          </div>
+          <div className="muted" style={{ fontSize: 12 }}>
+            Detail: {state.message}
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            If this persists, hard-reload the page (clears cached JS bundle).
+          </div>
+        </Card>
       </section>
     );
   }
