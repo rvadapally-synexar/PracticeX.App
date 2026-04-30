@@ -436,7 +436,11 @@ export const analysisApi = {
     request<LlmExtractionResult>(`/analysis/documents/${assetId}/llm-extract`, { method: 'POST' }),
   llmExtractBatch: (force = false) =>
     request<BatchExtractionResult>(`/analysis/llm-extract-batch${force ? '?force=true' : ''}`, { method: 'POST' }),
-  getPortfolioBrief: () => request<PortfolioBrief>('/analysis/portfolio-brief'),
+  getPortfolioBrief: () =>
+    // Cache-buster: iPad Safari ITP / mobile WebKit was returning stuck
+    // "Load failed" on this endpoint after earlier transient errors. Adding
+    // a per-call timestamp guarantees a fresh URL on every fetch.
+    request<PortfolioBrief>(`/analysis/portfolio-brief?_t=${Date.now()}`),
   generatePortfolioBrief: () =>
     request<PortfolioBrief>('/analysis/portfolio-brief', { method: 'POST' }),
 };

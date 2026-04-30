@@ -38,6 +38,7 @@ public static class PortfolioBriefEndpoint
         """;
 
     private static async Task<Results<Ok<PortfolioBriefResponse>, NotFound>> GetPortfolioBrief(
+        HttpContext httpContext,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
@@ -45,6 +46,10 @@ public static class PortfolioBriefEndpoint
         var brief = await db.PortfolioBriefs
             .FirstOrDefaultAsync(b => b.TenantId == userContext.TenantId, cancellationToken);
         if (brief is null) return TypedResults.NotFound();
+        // Defensive: iPad Safari was caching transient error responses for
+        // this URL. Tell every layer not to.
+        httpContext.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
+        httpContext.Response.Headers["Pragma"] = "no-cache";
         return TypedResults.Ok(new PortfolioBriefResponse(
             BriefMd: brief.BriefMd,
             Model: brief.Model,
