@@ -93,28 +93,28 @@ export function DocumentDetailPage() {
       <section className="document-split">
         <Card title="Original document" className="document-source-card">
           {sourceUrl ? (
-            isPdf ? (
-              <object
-                data={sourceUrl}
-                type="application/pdf"
-                className="document-source-frame"
-              >
-                <iframe title="Original PDF" src={sourceUrl} className="document-source-frame" />
-              </object>
-            ) : (
-              <div className="document-source-fallback">
-                <p className="muted" style={{ marginBottom: 12 }}>
-                  Browsers can't render this format inline.{' '}
-                  <a href={sourceUrl} target="_blank" rel="noreferrer">Open the original</a> in a new tab,
-                  or read the extracted text below.
-                </p>
-                {detail.layoutSnippet ? (
-                  <pre className="layout-snippet">{detail.layoutSnippet}</pre>
-                ) : (
-                  <div className="muted">No text snippet available yet — re-process this document to populate.</div>
-                )}
+            <div className="document-source-fallback">
+              <div className="open-original">
+                <a href={sourceUrl} target="_blank" rel="noreferrer" className="open-original-link">
+                  📄 Open original {isPdf ? 'PDF' : 'document'} in new tab
+                </a>
+                <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                  Inline rendering across origins is unreliable; new tab works perfectly.
+                </div>
               </div>
-            )
+              {detail.layoutSnippet ? (
+                <>
+                  <div className="eyebrow" style={{ marginTop: 16, fontSize: 11 }}>
+                    What we read from this document
+                  </div>
+                  <pre className="layout-snippet">{detail.layoutSnippet}</pre>
+                </>
+              ) : (
+                <div className="muted" style={{ marginTop: 12 }}>
+                  No text snippet available — re-process this document to populate.
+                </div>
+              )}
+            </div>
           ) : (
             <div className="muted">No source URL.</div>
           )}
@@ -211,19 +211,21 @@ function FieldRow({ field }: { field: ExtractedField }) {
   const value = field.value;
   let body: ReactElement;
 
-  if (value === null || value === '' || value === '"— not found"') {
+  if (value === null || value === '' || value === '"— not found"' || value === 'null') {
     body = <span className="muted">— not found</span>;
   } else {
     body = <FieldValue raw={value} />;
   }
 
   return (
-    <div className="field-row">
-      <div className="field-name">{prettyFieldName(field.name)}</div>
-      <div className="field-value">{body}</div>
-      <div className="field-confidence">
-        <ConfidenceBar value={field.confidence} />
+    <div className="field-card">
+      <div className="field-card-head">
+        <div className="field-name">{prettyFieldName(field.name)}</div>
+        <div className="field-confidence">
+          <ConfidenceBar value={field.confidence} />
+        </div>
       </div>
+      <div className="field-card-body">{body}</div>
       {field.sourceCitation ? (
         <div className="field-citation muted">{field.sourceCitation}</div>
       ) : null}

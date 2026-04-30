@@ -473,38 +473,65 @@ select {
   flex-direction: column;
 }
 
-.field-row {
+.field-card {
   border-top: 1px solid var(--px-line-2);
-  display: grid;
-  gap: 12px;
-  grid-template-columns: 180px minmax(0, 1fr) 80px;
-  grid-template-rows: auto auto;
-  padding: 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 0;
 }
 
-.field-row:first-of-type {
+.field-card:first-of-type {
   border-top: none;
+  padding-top: 4px;
 }
 
-.field-name {
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: capitalize;
+.field-card-head {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
 }
 
-.field-value {
+.field-card-body {
   font-size: 13px;
+  line-height: 1.5;
   word-break: break-word;
 }
 
+.field-name {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--px-fg-muted);
+}
+
 .field-confidence {
-  align-self: center;
+  flex: 0 0 80px;
 }
 
 .field-citation {
   font-size: 11px;
-  grid-column: 2 / -1;
-  margin-top: -4px;
+}
+
+.open-original {
+  background: var(--px-bg-1);
+  border: 1px solid var(--px-line-2);
+  border-radius: 8px;
+  padding: 16px;
+  text-align: center;
+}
+
+.open-original-link {
+  color: var(--px-green);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.open-original-link:hover {
+  text-decoration: underline;
 }
 
 .value-list {
