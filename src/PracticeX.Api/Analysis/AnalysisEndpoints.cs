@@ -377,6 +377,9 @@ public static class AnalysisEndpoints
             LlmExtractedFields: llmExtractedFields,
             LlmModel: asset.LlmExtractorModel,
             LlmExtractedAt: asset.LlmExtractedAt,
+            NarrativeBriefMd: asset.LlmNarrativeMd,
+            NarrativeModel: asset.LlmNarrativeModel,
+            NarrativeExtractedAt: asset.LlmNarrativeExtractedAt,
             CreatedAt: asset.CreatedAt
         ));
     }
@@ -814,6 +817,9 @@ public sealed record DocumentDetailResponse(
     ExtractedFieldsView? LlmExtractedFields,
     string? LlmModel,
     DateTimeOffset? LlmExtractedAt,
+    string? NarrativeBriefMd,
+    string? NarrativeModel,
+    DateTimeOffset? NarrativeExtractedAt,
     DateTimeOffset CreatedAt);
 
 public sealed record ExtractedFieldsView(

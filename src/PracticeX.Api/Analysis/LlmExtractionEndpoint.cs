@@ -10,12 +10,20 @@ using PracticeX.Infrastructure.Persistence;
 namespace PracticeX.Api.Analysis;
 
 /// <summary>
-/// Slice 13: LLM-refined extraction. POST /api/analysis/documents/{id}/llm-extract
-/// loads the asset's text (Doc Intel layout fullText, falling back to local
-/// extraction), assembles a family-specific prompt, calls the configured
-/// IDocumentLanguageModel, parses the JSON response, and stores it in
-/// document_assets.llm_extracted_fields_json. UI shows LLM fields when
-/// present and falls back to regex output otherwise.
+/// Slice 16: two-stage LLM pipeline.
+///
+/// Stage 1 (narrative). Family-specific prompt at temperature 0.3 puts the
+/// model in a healthcare-attorney persona and produces a markdown
+/// "Document Intelligence Brief" — sectioned, expansive, grounded in the
+/// source. Saved to <c>document_assets.llm_narrative_md</c>.
+///
+/// Stage 2 (extraction). Family-specific prompt at temperature 0.1 reads
+/// the brief as ground truth and emits a strict JSON object matching the
+/// family schema (renewal cues, risk flags, compliance posture, etc.).
+/// Saved to <c>document_assets.llm_extracted_fields_json</c> — same column
+/// the v1 single-pass output used, so existing readers keep working.
+///
+/// Both stages are wrapped in one batch endpoint that re-runs the corpus.
 /// </summary>
 public static class LlmExtractionEndpoint
 {
@@ -28,6 +36,26 @@ public static class LlmExtractionEndpoint
             .WithName("LlmExtractBatch");
         return routes;
     }
+
+    private const int MaxInputChars = 30_000;
+    private const int Stage1MaxTokens = 4096;
+    private const int Stage2MaxTokens = 4096;
+    private const double Stage1Temperature = 0.3;
+    private const double Stage2Temperature = 0.1;
+
+    private const string SystemPromptStage1 = """
+        You are a senior healthcare-transactions attorney producing a Document
+        Intelligence Brief. Follow the structural template in the user message
+        exactly. Do not output JSON or code fences. Stay grounded in the
+        source document; use sanctioned hedges instead of guessing.
+        """;
+
+    private const string SystemPromptStage2 = """
+        You are a precise JSON extractor. Read the Document Intelligence
+        Brief in the user message and emit a single JSON object that matches
+        the schema. The brief is ground truth — do not infer beyond it. No
+        prose, no markdown, no code fences — JSON only.
+        """;
 
     private static async Task<Ok<BatchExtractionResult>> LlmExtractBatch(
         bool? force,
@@ -49,6 +77,10 @@ public static class LlmExtractionEndpoint
             .Where(a => a.TenantId == userContext.TenantId)
             .ToListAsync(cancellationToken);
 
+        var sourceNameById = await db.SourceObjects
+            .Where(s => s.TenantId == userContext.TenantId)
+            .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
         int refined = 0, skipped = 0, failed = 0;
         int totalIn = 0, totalOut = 0;
@@ -58,82 +90,45 @@ public static class LlmExtractionEndpoint
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Skip if already done unless force=true
-            if (!doForce && !string.IsNullOrEmpty(asset.LlmExtractedFieldsJson))
+            // Skip if both stages already done unless force=true.
+            if (!doForce
+                && !string.IsNullOrEmpty(asset.LlmNarrativeMd)
+                && !string.IsNullOrEmpty(asset.LlmExtractedFieldsJson))
             {
                 skipped++;
                 continue;
             }
 
-            // Resolve the candidate type
             var candidate = await db.DocumentCandidates
                 .FirstOrDefaultAsync(c => c.DocumentAssetId == asset.Id && c.TenantId == userContext.TenantId, cancellationToken);
             var candidateType = candidate?.CandidateType ?? DocumentCandidateTypes.Unknown;
 
-            string? text = null;
-            if (!string.IsNullOrEmpty(asset.LayoutJson))
-            {
-                try
-                {
-                    using var doc = JsonDocument.Parse(asset.LayoutJson);
-                    if (doc.RootElement.TryGetProperty("fullText", out var ft)) text = ft.GetString();
-                }
-                catch { /* swallow */ }
-            }
-            if (string.IsNullOrEmpty(text)) text = asset.ExtractedFullText;
-            if (string.IsNullOrWhiteSpace(text))
+            var docText = ResolveDocumentText(asset);
+            if (string.IsNullOrWhiteSpace(docText))
             {
                 skipped++;
                 continue;
             }
 
-            const int MaxChars = 30_000;
-            var truncated = text.Length > MaxChars;
-            var docText = truncated ? text[..MaxChars] : text;
-            var prompt = BuildPrompt(candidateType, docText, truncated);
-
             try
             {
-                var response = await llm.CompleteAsync(new LanguageModelRequest
-                {
-                    System = SystemPrompt,
-                    Messages = [new LanguageModelMessage(LanguageModelRoles.User, prompt)],
-                    MaxTokens = 2048,
-                    Temperature = 0.0,
-                    JsonSchema = "{}",
-                    Purpose = $"batch-extract:{candidateType}"
-                }, cancellationToken);
+                var fileName = (asset.SourceObjectId.HasValue
+                    && sourceNameById.TryGetValue(asset.SourceObjectId.Value, out var fn))
+                    ? fn : "(unnamed)";
 
-                var json = ExtractJson(response.Text);
-                if (string.IsNullOrEmpty(json))
-                {
-                    failed++;
-                    asset.LlmExtractionStatus = "failed";
-                    asset.UpdatedAt = DateTimeOffset.UtcNow;
-                    continue;
-                }
+                var (tIn, tOut) = await RunTwoStageAsync(
+                    asset, candidateType, fileName, docText, llm, cancellationToken);
 
-                asset.LlmExtractedFieldsJson = json;
-                asset.LlmExtractorModel = response.Model;
-                asset.LlmTokensIn = response.TokensIn;
-                asset.LlmTokensOut = response.TokensOut;
-                asset.LlmExtractedAt = DateTimeOffset.UtcNow;
-                asset.LlmExtractionStatus = "completed";
-                asset.UpdatedAt = DateTimeOffset.UtcNow;
-
-                totalIn += response.TokensIn;
-                totalOut += response.TokensOut;
+                totalIn += tIn;
+                totalOut += tOut;
                 refined++;
 
-                // Save per-doc so partial progress survives a cancellation.
                 await db.SaveChangesAsync(cancellationToken);
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Batch LLM extraction failed on asset {AssetId}", asset.Id);
+                logger.LogWarning(ex, "Two-stage extraction failed on asset {AssetId}", asset.Id);
                 failed++;
-                asset.LlmExtractionStatus = "failed";
-                asset.UpdatedAt = DateTimeOffset.UtcNow;
                 await db.SaveChangesAsync(cancellationToken);
             }
         }
@@ -145,7 +140,7 @@ public static class LlmExtractionEndpoint
             TenantId = userContext.TenantId,
             ActorType = "user",
             ActorId = userContext.UserId,
-            EventType = "ingestion.llm.batch",
+            EventType = "ingestion.llm.batch_two_stage",
             ResourceType = "tenant",
             ResourceId = userContext.TenantId,
             MetadataJson = JsonSerializer.Serialize(new
@@ -184,7 +179,8 @@ public static class LlmExtractionEndpoint
     {
         if (!llm.IsConfigured)
         {
-            return TypedResults.BadRequest(new ProblemSummary("llm_not_configured", "LLM provider isn't configured. Set OpenRouter:Enabled=true and OpenRouter:ApiKey via user-secrets."));
+            return TypedResults.BadRequest(new ProblemSummary("llm_not_configured",
+                "LLM provider isn't configured. Set OpenRouter:Enabled=true and OpenRouter:ApiKey via user-secrets."));
         }
 
         var asset = await db.DocumentAssets
@@ -195,8 +191,167 @@ public static class LlmExtractionEndpoint
             .FirstOrDefaultAsync(c => c.DocumentAssetId == assetId && c.TenantId == userContext.TenantId, cancellationToken);
         var candidateType = candidate?.CandidateType ?? DocumentCandidateTypes.Unknown;
 
-        // Source the text. Prefer Doc Intel layout fullText, fall back to local-extracted.
-        string? text = null;
+        var docText = ResolveDocumentText(asset);
+        if (string.IsNullOrWhiteSpace(docText))
+        {
+            return TypedResults.BadRequest(new ProblemSummary("no_text",
+                "No extracted text available for this document. Re-ingest first."));
+        }
+
+        var fileName = "(unnamed)";
+        if (asset.SourceObjectId.HasValue)
+        {
+            var src = await db.SourceObjects
+                .Where(s => s.Id == asset.SourceObjectId.Value)
+                .Select(s => s.Name)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (!string.IsNullOrWhiteSpace(src)) fileName = src!;
+        }
+
+        try
+        {
+            var (tIn, tOut) = await RunTwoStageAsync(
+                asset, candidateType, fileName, docText, llm, cancellationToken);
+
+            db.AuditEvents.Add(new AuditEvent
+            {
+                TenantId = userContext.TenantId,
+                ActorType = "user",
+                ActorId = userContext.UserId,
+                EventType = "ingestion.llm.two_stage",
+                ResourceType = "document_asset",
+                ResourceId = asset.Id,
+                MetadataJson = JsonSerializer.Serialize(new
+                {
+                    candidateType,
+                    family = PromptLoader.ResolveFamily(candidateType),
+                    narrativeModel = asset.LlmNarrativeModel,
+                    extractionModel = asset.LlmExtractorModel,
+                    tokensIn = tIn,
+                    tokensOut = tOut,
+                    inputChars = docText.Length
+                }),
+                CreatedAt = DateTimeOffset.UtcNow
+            });
+            await db.SaveChangesAsync(cancellationToken);
+
+            return TypedResults.Ok(new LlmExtractionResult(
+                Status: "completed",
+                Model: asset.LlmExtractorModel ?? "",
+                TokensIn: tIn,
+                TokensOut: tOut,
+                LatencyMs: (asset.LlmNarrativeLatencyMs ?? 0),
+                Json: asset.LlmExtractedFieldsJson ?? "{}"));
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Two-stage LLM extraction failed for asset {AssetId}", assetId);
+            await db.SaveChangesAsync(cancellationToken);
+            return TypedResults.BadRequest(new ProblemSummary("llm_failed", ex.Message));
+        }
+    }
+
+    /// <summary>
+    /// Drives stage 1 (narrative) then stage 2 (extraction) on a single asset.
+    /// Persists both outputs onto the asset and returns token totals.
+    /// Caller is responsible for SaveChangesAsync and audit-event emission.
+    /// </summary>
+    private static async Task<(int TokensIn, int TokensOut)> RunTwoStageAsync(
+        DocumentAsset asset,
+        string candidateType,
+        string fileName,
+        string fullText,
+        IDocumentLanguageModel llm,
+        CancellationToken cancellationToken)
+    {
+        var truncated = fullText.Length > MaxInputChars;
+        var docText = truncated ? fullText[..MaxInputChars] : fullText;
+        var family = PromptLoader.ResolveFamily(candidateType);
+        var layoutProvider = asset.LayoutProvider ?? "local_text";
+
+        // ---- Stage 1: narrative brief ----
+        asset.LlmNarrativeStatus = "running";
+        asset.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var stage1Tpl = PromptLoader.LoadStage1(candidateType);
+        var stage1Prompt = PromptLoader.Render(stage1Tpl, new Dictionary<string, string>
+        {
+            ["FILE_NAME"] = fileName,
+            ["LAYOUT_PROVIDER"] = layoutProvider,
+            ["CANDIDATE_TYPE"] = candidateType,
+            ["PARENT_LEASE_HINT"] = "(no parent context provided)",
+            ["FULL_TEXT"] = docText
+        });
+
+        var stage1Sw = System.Diagnostics.Stopwatch.StartNew();
+        var stage1Resp = await llm.CompleteAsync(new LanguageModelRequest
+        {
+            System = SystemPromptStage1,
+            Messages = [new LanguageModelMessage(LanguageModelRoles.User, stage1Prompt)],
+            MaxTokens = Stage1MaxTokens,
+            Temperature = Stage1Temperature,
+            Purpose = $"narrative:{family}"
+        }, cancellationToken);
+        stage1Sw.Stop();
+
+        var brief = stage1Resp.Text?.Trim();
+        if (string.IsNullOrWhiteSpace(brief))
+        {
+            asset.LlmNarrativeStatus = "failed";
+            throw new InvalidOperationException("Stage 1 returned an empty narrative.");
+        }
+
+        asset.LlmNarrativeMd = brief;
+        asset.LlmNarrativeModel = stage1Resp.Model;
+        asset.LlmNarrativeTokensIn = stage1Resp.TokensIn;
+        asset.LlmNarrativeTokensOut = stage1Resp.TokensOut;
+        asset.LlmNarrativeExtractedAt = DateTimeOffset.UtcNow;
+        asset.LlmNarrativeTemperature = (decimal)Stage1Temperature;
+        asset.LlmNarrativeLatencyMs = (int)stage1Sw.ElapsedMilliseconds;
+        asset.LlmNarrativeStatus = "completed";
+
+        // ---- Stage 2: JSON extraction from brief ----
+        asset.LlmExtractionStatus = "running";
+
+        var stage2Tpl = PromptLoader.LoadStage2(candidateType);
+        var stage2Prompt = PromptLoader.Render(stage2Tpl, new Dictionary<string, string>
+        {
+            ["NARRATIVE_BRIEF"] = brief
+        });
+
+        var stage2Resp = await llm.CompleteAsync(new LanguageModelRequest
+        {
+            System = SystemPromptStage2,
+            Messages = [new LanguageModelMessage(LanguageModelRoles.User, stage2Prompt)],
+            MaxTokens = Stage2MaxTokens,
+            Temperature = Stage2Temperature,
+            JsonSchema = "{}",
+            Purpose = $"extract:{family}"
+        }, cancellationToken);
+
+        var json = ExtractJson(stage2Resp.Text);
+        if (string.IsNullOrEmpty(json))
+        {
+            asset.LlmExtractionStatus = "failed";
+            asset.UpdatedAt = DateTimeOffset.UtcNow;
+            throw new InvalidOperationException("Stage 2 response did not contain a parseable JSON object.");
+        }
+
+        asset.LlmExtractedFieldsJson = json;
+        asset.LlmExtractorModel = stage2Resp.Model;
+        asset.LlmTokensIn = stage2Resp.TokensIn;
+        asset.LlmTokensOut = stage2Resp.TokensOut;
+        asset.LlmExtractedAt = DateTimeOffset.UtcNow;
+        asset.LlmExtractionStatus = "completed";
+        asset.UpdatedAt = DateTimeOffset.UtcNow;
+
+        var totalIn = stage1Resp.TokensIn + stage2Resp.TokensIn;
+        var totalOut = stage1Resp.TokensOut + stage2Resp.TokensOut;
+        return (totalIn, totalOut);
+    }
+
+    private static string? ResolveDocumentText(DocumentAsset asset)
+    {
         if (!string.IsNullOrEmpty(asset.LayoutJson))
         {
             try
@@ -204,102 +359,19 @@ public static class LlmExtractionEndpoint
                 using var doc = JsonDocument.Parse(asset.LayoutJson);
                 if (doc.RootElement.TryGetProperty("fullText", out var ft))
                 {
-                    text = ft.GetString();
+                    var s = ft.GetString();
+                    if (!string.IsNullOrWhiteSpace(s)) return s;
                 }
             }
             catch { /* swallow */ }
         }
-        if (string.IsNullOrEmpty(text)) text = asset.ExtractedFullText;
-
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return TypedResults.BadRequest(new ProblemSummary("no_text", "No extracted text available for this document. Re-ingest first."));
-        }
-
-        // Cap input at ~30k chars (~7k tokens) - Claude Haiku context is plenty
-        // larger but we don't want a 200-page lease blowing through tokens.
-        const int MaxChars = 30_000;
-        var truncated = text.Length > MaxChars;
-        var docText = truncated ? text[..MaxChars] : text;
-
-        var prompt = BuildPrompt(candidateType, docText, truncated);
-
-        asset.LlmExtractionStatus = "running";
-        asset.UpdatedAt = DateTimeOffset.UtcNow;
-        await db.SaveChangesAsync(cancellationToken);
-
-        try
-        {
-            var response = await llm.CompleteAsync(new LanguageModelRequest
-            {
-                System = SystemPrompt,
-                Messages = [new LanguageModelMessage(LanguageModelRoles.User, prompt)],
-                MaxTokens = 2048,
-                Temperature = 0.0,
-                JsonSchema = "{}",
-                Purpose = $"extract:{candidateType}"
-            }, cancellationToken);
-
-            var json = ExtractJson(response.Text);
-            if (string.IsNullOrEmpty(json))
-            {
-                throw new InvalidOperationException("LLM response did not contain a parseable JSON object.");
-            }
-
-            // Store as-is (jsonb validates).
-            asset.LlmExtractedFieldsJson = json;
-            asset.LlmExtractorModel = response.Model;
-            asset.LlmTokensIn = response.TokensIn;
-            asset.LlmTokensOut = response.TokensOut;
-            asset.LlmExtractedAt = DateTimeOffset.UtcNow;
-            asset.LlmExtractionStatus = "completed";
-            asset.UpdatedAt = DateTimeOffset.UtcNow;
-
-            db.AuditEvents.Add(new AuditEvent
-            {
-                TenantId = userContext.TenantId,
-                ActorType = "user",
-                ActorId = userContext.UserId,
-                EventType = "ingestion.llm.extracted",
-                ResourceType = "document_asset",
-                ResourceId = asset.Id,
-                MetadataJson = JsonSerializer.Serialize(new
-                {
-                    model = response.Model,
-                    tokensIn = response.TokensIn,
-                    tokensOut = response.TokensOut,
-                    latencyMs = response.LatencyMs,
-                    candidateType,
-                    inputChars = docText.Length,
-                    truncated
-                }),
-                CreatedAt = DateTimeOffset.UtcNow
-            });
-
-            await db.SaveChangesAsync(cancellationToken);
-
-            return TypedResults.Ok(new LlmExtractionResult(
-                Status: "completed",
-                Model: response.Model,
-                TokensIn: response.TokensIn,
-                TokensOut: response.TokensOut,
-                LatencyMs: response.LatencyMs,
-                Json: json));
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "LLM extraction failed for asset {AssetId}", assetId);
-            asset.LlmExtractionStatus = "failed";
-            asset.UpdatedAt = DateTimeOffset.UtcNow;
-            await db.SaveChangesAsync(cancellationToken);
-            return TypedResults.BadRequest(new ProblemSummary("llm_failed", ex.Message));
-        }
+        return asset.ExtractedFullText;
     }
 
     /// <summary>
-    /// Pulls the first {...} JSON object out of a model response. Models often
-    /// wrap JSON in code fences or add a sentence before; this trims to the
-    /// outermost balanced braces.
+    /// Pulls the first {...} JSON object out of a model response. Models
+    /// occasionally wrap JSON in code fences; this trims to the outermost
+    /// balanced braces.
     /// </summary>
     private static string? ExtractJson(string text)
     {
@@ -318,166 +390,6 @@ public static class LlmExtractionEndpoint
         }
         return null;
     }
-
-    private const string SystemPrompt = """
-        You extract structured fields from healthcare-practice contracts. Always reply with a single JSON object that conforms to the schema in the user message. Never include commentary, code fences, or explanation - just JSON. When a field can't be confidently extracted, use null. Use ISO 8601 dates (YYYY-MM-DD). For party names, return the legal entity name only - strip "hereinafter known as", role labels, comma-trailing parentheticals.
-        """;
-
-    private static string BuildPrompt(string candidateType, string text, bool truncated) =>
-        candidateType switch
-        {
-            "lease" or "lease_amendment" or "lease_loi" or "sublease" => LeasePrompt(text, truncated),
-            "nda" => NdaPrompt(text, truncated),
-            "employee_agreement" or "amendment" => EmploymentPrompt(text, truncated),
-            "call_coverage_agreement" => CallCoveragePrompt(text, truncated),
-            "bylaws" or "vendor_contract" or "service_agreement" or "processor_agreement" => GenericPrompt(candidateType, text, truncated),
-            _ => GenericPrompt(candidateType, text, truncated)
-        };
-
-    private static string LeasePrompt(string text, bool truncated) => $$"""
-        Extract these fields from the lease document below. Return ONLY a JSON object.
-
-        Schema:
-        {
-          "subtype": "master_lease" | "lease_amendment" | "lease_loi" | "sublease" | null,
-          "amendment_number": <integer or null>,
-          "parent_agreement_date": "YYYY-MM-DD" | null,
-          "effective_date": "YYYY-MM-DD" | null,
-          "landlord": "<legal entity name>" | null,
-          "tenant": "<legal entity name>" | null,
-          "premises": [
-            {
-              "street_address": "<street + city + state>",
-              "suite": "<suite number>",
-              "rentable_square_feet": <number or null>
-            }
-          ],
-          "rent": {
-            "base_amount": <number or null>,
-            "period": "month" | "year" | null,
-            "currency": "USD",
-            "escalation_pattern": "<short description or null>",
-            "deferred": <boolean>
-          },
-          "term_months": <integer or null>,
-          "governing_law": "<state or null>",
-          "is_signed": <boolean>,
-          "signers": [{ "name": "<full name>", "title": "<role>", "signed_date": "YYYY-MM-DD" | null }]
-        }
-
-        {{(truncated ? "Note: document was truncated; fields near the end may be incomplete.\n\n" : "")}}Document:
-        ---
-        {{text}}
-        ---
-        """;
-
-    private static string NdaPrompt(string text, bool truncated) => $$"""
-        Extract these fields from the NDA document below. Return ONLY a JSON object.
-
-        Schema:
-        {
-          "subtype": "bilateral_individual" | "mutual_org" | "investor_template" | "advisor_template" | "demo_participant_template" | null,
-          "effective_date": "YYYY-MM-DD" | null,
-          "is_mutual": <boolean>,
-          "is_template": <boolean>,
-          "parties": [
-            { "type": "person" | "organization", "name": "<legal name>", "role": "disclosing" | "receiving" | "both" | null }
-          ],
-          "permitted_purpose": "<short string or null>",
-          "term_months": <integer or null>,
-          "governing_law": "<state or null>",
-          "signers": [{ "name": "<full name>", "title": "<role>", "signed_date": "YYYY-MM-DD" | null }]
-        }
-
-        {{(truncated ? "Note: document was truncated; fields near the end may be incomplete.\n\n" : "")}}Document:
-        ---
-        {{text}}
-        ---
-        """;
-
-    private static string EmploymentPrompt(string text, bool truncated) => $$"""
-        Extract these fields from the employment / shareholder document below. Return ONLY a JSON object.
-
-        Schema:
-        {
-          "subtype": "offer_letter" | "engagement_letter" | "advisor_agreement" | "ciia" | "phi_agreement" | "physician_employment" | "shareholder_addendum" | null,
-          "amendment_number": <integer or null>,
-          "parent_agreement_date": "YYYY-MM-DD" | null,
-          "effective_date": "YYYY-MM-DD" | null,
-          "parties": [
-            { "name": "<legal name>", "role": "employer" | "employee" | "physician" | "medical_group" | null, "title": "<job title or null>" }
-          ],
-          "compensation_summary": "<one-paragraph summary or null>",
-          "equity_grants": [
-            { "type": "core_advisory" | "growth" | "option" | "rsu" | null,
-              "percentage": <number or null>, "shares": <integer or null>,
-              "vesting_months": <integer or null>, "cliff_months": <integer or null> }
-          ],
-          "term_months": <integer or null>,
-          "governing_law": "<state or null>",
-          "is_signed": <boolean>,
-          "signers": [{ "name": "<full name>", "title": "<role>", "signed_date": "YYYY-MM-DD" | null }]
-        }
-
-        {{(truncated ? "Note: document was truncated; fields near the end may be incomplete.\n\n" : "")}}Document:
-        ---
-        {{text}}
-        ---
-        """;
-
-    private static string CallCoveragePrompt(string text, bool truncated) => $$"""
-        Extract these fields from the call-coverage agreement below. Return ONLY a JSON object.
-
-        Schema:
-        {
-          "effective_date": "YYYY-MM-DD" | null,
-          "parties": [
-            { "role": "medical_group" | "covering_physician" | "covered_facility", "name": "<legal name>", "specialty": "<specialty or null>" }
-          ],
-          "coverage_specialty": "<specialty>",
-          "coverage_windows": [
-            { "type": "24x7" | "weekend" | "weekday_evenings" | "holiday" | "after_hours" | null,
-              "schedule_description": "<free-text description>" }
-          ],
-          "compensation": {
-            "per_shift_amount": <number or null>,
-            "per_day_amount": <number or null>,
-            "per_month_amount": <number or null>,
-            "currency": "USD"
-          },
-          "term_months": <integer or null>,
-          "governing_law": "<state or null>",
-          "is_signed": <boolean>,
-          "signers": [{ "name": "<full name>", "title": "<role>", "signed_date": "YYYY-MM-DD" | null }]
-        }
-
-        {{(truncated ? "Note: document was truncated; fields near the end may be incomplete.\n\n" : "")}}Document:
-        ---
-        {{text}}
-        ---
-        """;
-
-    private static string GenericPrompt(string candidateType, string text, bool truncated) => $$"""
-        Extract these fields from the contract document below. The classifier flagged this as "{{candidateType}}". Return ONLY a JSON object.
-
-        Schema:
-        {
-          "document_type": "<short description>",
-          "effective_date": "YYYY-MM-DD" | null,
-          "parties": [{ "name": "<legal name>", "role": "<role>" }],
-          "key_terms": [{ "term": "<short label>", "description": "<one-sentence summary>" }],
-          "term_months": <integer or null>,
-          "governing_law": "<state or null>",
-          "is_signed": <boolean>,
-          "signers": [{ "name": "<full name>", "title": "<role>", "signed_date": "YYYY-MM-DD" | null }],
-          "summary": "<one-paragraph plain-language summary>"
-        }
-
-        {{(truncated ? "Note: document was truncated; fields near the end may be incomplete.\n\n" : "")}}Document:
-        ---
-        {{text}}
-        ---
-        """;
 }
 
 public sealed record LlmExtractionResult(

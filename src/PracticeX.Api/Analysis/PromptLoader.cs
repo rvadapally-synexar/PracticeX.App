@@ -1,0 +1,62 @@
+using System.Collections.Concurrent;
+using System.Reflection;
+
+namespace PracticeX.Api.Analysis;
+
+/// <summary>
+/// Loads stage-1 (narrative) and stage-2 (extraction) prompt templates from
+/// embedded resources at <c>PracticeX.Api.Analysis.Prompts.Stage*_*.md</c>.
+/// Templates are cached after first read; substitution is positional via
+/// <c>{KEY}</c> tokens. Family selection comes from the document's
+/// candidate type — see <see cref="ResolveFamily"/>.
+/// </summary>
+public static class PromptLoader
+{
+    private static readonly ConcurrentDictionary<string, string> _cache = new();
+    private static readonly Assembly _asm = typeof(PromptLoader).Assembly;
+
+    public static string ResolveFamily(string candidateType) => candidateType switch
+    {
+        "lease" or "lease_amendment" or "lease_loi" or "sublease" => "Lease",
+        "nda" => "Nda",
+        "employee_agreement" or "amendment" => "Employment",
+        "call_coverage_agreement" => "CallCoverage",
+        _ => "Generic"
+    };
+
+    public static string LoadStage1(string candidateType) =>
+        Load($"Stage1_{ResolveFamily(candidateType)}");
+
+    public static string LoadStage2(string candidateType) =>
+        Load($"Stage2_{ResolveFamily(candidateType)}");
+
+    private static string Load(string baseName)
+    {
+        return _cache.GetOrAdd(baseName, name =>
+        {
+            var resourceName = $"PracticeX.Api.Analysis.Prompts.{name}.md";
+            using var stream = _asm.GetManifestResourceStream(resourceName)
+                ?? throw new InvalidOperationException(
+                    $"Embedded prompt resource not found: {resourceName}. " +
+                    $"Check Analysis/Prompts/{name}.md exists and the .csproj has " +
+                    $"<EmbeddedResource Include=\"Analysis\\Prompts\\*.md\" />.");
+            using var reader = new StreamReader(stream);
+            return reader.ReadToEnd();
+        });
+    }
+
+    /// <summary>
+    /// Substitutes <c>{KEY}</c> tokens in <paramref name="template"/> using
+    /// the provided dictionary. Unknown tokens are left in place — they
+    /// surface during prompt review and never silently disappear.
+    /// </summary>
+    public static string Render(string template, IReadOnlyDictionary<string, string> values)
+    {
+        var result = template;
+        foreach (var (key, value) in values)
+        {
+            result = result.Replace("{" + key + "}", value ?? string.Empty, StringComparison.Ordinal);
+        }
+        return result;
+    }
+}

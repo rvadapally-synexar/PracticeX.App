@@ -22,4 +22,9 @@
     <ProjectReference Include="..\PracticeX.Discovery.Contracts\PracticeX.Discovery.Contracts.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Slice 16: stage-1/stage-2 prompt templates loaded by PromptLoader. -->
+    <EmbeddedResource Include="Analysis\Prompts\*.md" />
+  </ItemGroup>
+
 </Project>
