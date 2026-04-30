@@ -37,9 +37,16 @@ public static class LlmExtractionEndpoint
         return routes;
     }
 
-    private const int MaxInputChars = 30_000;
-    private const int Stage1MaxTokens = 4096;
-    private const int Stage2MaxTokens = 4096;
+    // Input cap: Sonnet 4.6 has a 200K context. We cap at 80K chars
+    // (~20K tokens) so the prompt template + brief response still fit
+    // comfortably. Most contracts (incl. physician employment with
+    // Schedule attachments) live under 80K; large master leases may still
+    // truncate, but they truncate after the meaningful sections.
+    private const int MaxInputChars = 80_000;
+    // Output cap: a 14-section lease brief routinely produces 16K-20K
+    // chars (~5K-6K tokens). 8192 gives us headroom without runaway cost.
+    private const int Stage1MaxTokens = 8192;
+    private const int Stage2MaxTokens = 6144;
     private const double Stage1Temperature = 0.3;
     private const double Stage2Temperature = 0.1;
 
