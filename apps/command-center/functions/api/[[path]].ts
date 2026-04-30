@@ -3,18 +3,23 @@
  *
  * Routes any request to https://app.practicex.ai/api/* through to the
  * api.practicex.ai tunnel, so the browser sees only same-origin traffic.
- * Eliminates the cross-origin auth dance that broke inline PDF rendering
- * and the cookie scoping issues we hit in Slice 12-13.
  *
- * Auth posture: api.practicex.ai is no longer behind Cloudflare Access
- * (Slice 15). The user-facing surface (app.practicex.ai) IS behind Access,
- * so anyone hitting this proxy must already have authenticated for the
- * UI app. Anyone hitting api.practicex.ai directly bypasses Access but
- * has no UI surface to do anything useful with - the API only exposes
- * tenant-scoped endpoints. Service-token-gated upgrade lined up for
- * post-demo hardening.
+ * Auth posture (Slice 16, finalized after #5):
+ *   - app.practicex.ai is gated by Cloudflare Access (email-OTP).
+ *   - api.practicex.ai is gated by Cloudflare Access with a single allowed
+ *     identity: a service token. The proxy below carries the token's
+ *     CF-Access-Client-Id + CF-Access-Client-Secret headers, so users who
+ *     reach this function via the authenticated UI shell get through.
+ *     Direct hits to api.practicex.ai (anyone who knows the URL) get 403.
+ *   - The two secrets live as encrypted Pages env vars and are never
+ *     present in source.
  */
-export const onRequest: PagesFunction = async ({ request }) => {
+interface ProxyEnv {
+  CF_ACCESS_CLIENT_ID?: string;
+  CF_ACCESS_CLIENT_SECRET?: string;
+}
+
+export const onRequest: PagesFunction<ProxyEnv> = async ({ request, env }) => {
   const url = new URL(request.url);
 
   // Defensive: reject if somehow not /api/*
@@ -36,6 +41,15 @@ export const onRequest: PagesFunction = async ({ request }) => {
   // Tag the proxied request so downstream logging can distinguish
   // browser-direct vs Pages-proxied calls.
   headers.set('x-practicex-proxy', 'pages-function');
+
+  // Cloudflare Access service-token credentials. Presence of both is what
+  // lets us pass through the api.practicex.ai Access app's Allow policy.
+  // Missing values surface as 403 from upstream — caller will see the
+  // failure rather than us silently pretending things are fine.
+  if (env.CF_ACCESS_CLIENT_ID && env.CF_ACCESS_CLIENT_SECRET) {
+    headers.set('CF-Access-Client-Id', env.CF_ACCESS_CLIENT_ID);
+    headers.set('CF-Access-Client-Secret', env.CF_ACCESS_CLIENT_SECRET);
+  }
 
   const init: RequestInit = {
     method: request.method,
