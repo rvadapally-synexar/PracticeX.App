@@ -24,7 +24,154 @@ public static class LlmExtractionEndpoint
         var group = routes.MapGroup("/api/analysis").WithTags("Analysis");
         group.MapPost("/documents/{assetId:guid}/llm-extract", LlmExtract)
             .WithName("LlmExtract");
+        group.MapPost("/llm-extract-batch", LlmExtractBatch)
+            .WithName("LlmExtractBatch");
         return routes;
+    }
+
+    private static async Task<Ok<BatchExtractionResult>> LlmExtractBatch(
+        bool? force,
+        PracticeXDbContext db,
+        IDocumentLanguageModel llm,
+        ICurrentUserContext userContext,
+        ILogger<Marker> logger,
+        CancellationToken cancellationToken)
+    {
+        if (!llm.IsConfigured)
+        {
+            return TypedResults.Ok(new BatchExtractionResult(
+                Total: 0, Refined: 0, Skipped: 0, Failed: 0, TotalTokensIn: 0, TotalTokensOut: 0,
+                LatencyMs: 0,
+                Notes: "LLM not configured."));
+        }
+
+        var assets = await db.DocumentAssets
+            .Where(a => a.TenantId == userContext.TenantId)
+            .ToListAsync(cancellationToken);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        int refined = 0, skipped = 0, failed = 0;
+        int totalIn = 0, totalOut = 0;
+        var doForce = force == true;
+
+        foreach (var asset in assets)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // Skip if already done unless force=true
+            if (!doForce && !string.IsNullOrEmpty(asset.LlmExtractedFieldsJson))
+            {
+                skipped++;
+                continue;
+            }
+
+            // Resolve the candidate type
+            var candidate = await db.DocumentCandidates
+                .FirstOrDefaultAsync(c => c.DocumentAssetId == asset.Id && c.TenantId == userContext.TenantId, cancellationToken);
+            var candidateType = candidate?.CandidateType ?? DocumentCandidateTypes.Unknown;
+
+            string? text = null;
+            if (!string.IsNullOrEmpty(asset.LayoutJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(asset.LayoutJson);
+                    if (doc.RootElement.TryGetProperty("fullText", out var ft)) text = ft.GetString();
+                }
+                catch { /* swallow */ }
+            }
+            if (string.IsNullOrEmpty(text)) text = asset.ExtractedFullText;
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                skipped++;
+                continue;
+            }
+
+            const int MaxChars = 30_000;
+            var truncated = text.Length > MaxChars;
+            var docText = truncated ? text[..MaxChars] : text;
+            var prompt = BuildPrompt(candidateType, docText, truncated);
+
+            try
+            {
+                var response = await llm.CompleteAsync(new LanguageModelRequest
+                {
+                    System = SystemPrompt,
+                    Messages = [new LanguageModelMessage(LanguageModelRoles.User, prompt)],
+                    MaxTokens = 2048,
+                    Temperature = 0.0,
+                    JsonSchema = "{}",
+                    Purpose = $"batch-extract:{candidateType}"
+                }, cancellationToken);
+
+                var json = ExtractJson(response.Text);
+                if (string.IsNullOrEmpty(json))
+                {
+                    failed++;
+                    asset.LlmExtractionStatus = "failed";
+                    asset.UpdatedAt = DateTimeOffset.UtcNow;
+                    continue;
+                }
+
+                asset.LlmExtractedFieldsJson = json;
+                asset.LlmExtractorModel = response.Model;
+                asset.LlmTokensIn = response.TokensIn;
+                asset.LlmTokensOut = response.TokensOut;
+                asset.LlmExtractedAt = DateTimeOffset.UtcNow;
+                asset.LlmExtractionStatus = "completed";
+                asset.UpdatedAt = DateTimeOffset.UtcNow;
+
+                totalIn += response.TokensIn;
+                totalOut += response.TokensOut;
+                refined++;
+
+                // Save per-doc so partial progress survives a cancellation.
+                await db.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Batch LLM extraction failed on asset {AssetId}", asset.Id);
+                failed++;
+                asset.LlmExtractionStatus = "failed";
+                asset.UpdatedAt = DateTimeOffset.UtcNow;
+                await db.SaveChangesAsync(cancellationToken);
+            }
+        }
+
+        sw.Stop();
+
+        db.AuditEvents.Add(new AuditEvent
+        {
+            TenantId = userContext.TenantId,
+            ActorType = "user",
+            ActorId = userContext.UserId,
+            EventType = "ingestion.llm.batch",
+            ResourceType = "tenant",
+            ResourceId = userContext.TenantId,
+            MetadataJson = JsonSerializer.Serialize(new
+            {
+                total = assets.Count,
+                refined,
+                skipped,
+                failed,
+                totalTokensIn = totalIn,
+                totalTokensOut = totalOut,
+                latencyMs = sw.ElapsedMilliseconds,
+                force = doForce
+            }),
+            CreatedAt = DateTimeOffset.UtcNow
+        });
+        await db.SaveChangesAsync(cancellationToken);
+
+        return TypedResults.Ok(new BatchExtractionResult(
+            Total: assets.Count,
+            Refined: refined,
+            Skipped: skipped,
+            Failed: failed,
+            TotalTokensIn: totalIn,
+            TotalTokensOut: totalOut,
+            LatencyMs: sw.ElapsedMilliseconds,
+            Notes: null));
     }
 
     private static async Task<Results<Ok<LlmExtractionResult>, NotFound, BadRequest<ProblemSummary>>> LlmExtract(
@@ -340,6 +487,16 @@ public sealed record LlmExtractionResult(
     int TokensOut,
     long LatencyMs,
     string Json);
+
+public sealed record BatchExtractionResult(
+    int Total,
+    int Refined,
+    int Skipped,
+    int Failed,
+    int TotalTokensIn,
+    int TotalTokensOut,
+    long LatencyMs,
+    string? Notes);
 
 public sealed record ProblemSummary(string Code, string Detail);
 

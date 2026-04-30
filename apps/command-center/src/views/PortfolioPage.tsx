@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Card, KpiCard, StatusChip } from '@practicex/design-system';
+import { Button, Card, KpiCard, StatusChip } from '@practicex/design-system';
 import {
   analysisApi,
+  type BatchExtractionResult,
   type Portfolio,
   type PortfolioFamily,
   type PortfolioDocument,
@@ -104,6 +105,16 @@ export function PortfolioPage() {
             {' '}across your filing cabinet.
           </div>
         </div>
+        <BatchLlmButton
+          totalDocs={portfolio.totalDocuments}
+          onCompleted={async () => {
+            const [p, i] = await Promise.all([
+              analysisApi.getPortfolio(),
+              analysisApi.getInsights(),
+            ]);
+            setState({ kind: 'ready', portfolio: p, insights: i });
+          }}
+        />
       </header>
 
       <section className="kpi-grid">
@@ -155,6 +166,48 @@ export function PortfolioPage() {
           </div>
         </Card>
       </section>
+    </div>
+  );
+}
+
+function BatchLlmButton({
+  totalDocs,
+  onCompleted,
+}: {
+  totalDocs: number;
+  onCompleted: () => Promise<void>;
+}) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<BatchExtractionResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function run(force: boolean) {
+    setRunning(true);
+    setError(null);
+    setResult(null);
+    try {
+      const r = await analysisApi.llmExtractBatch(force);
+      setResult(r);
+      await onCompleted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Batch extraction failed.');
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
+      <Button onClick={() => run(false)} disabled={running}>
+        {running ? `Refining ${totalDocs} docs with LLM…` : 'Refine all with LLM'}
+      </Button>
+      {result ? (
+        <span className="muted" style={{ fontSize: 12 }}>
+          ✓ {result.refined} refined · {result.skipped} skipped · {result.failed} failed ·{' '}
+          {Math.round(result.latencyMs / 1000)}s · ${(((result.totalTokensIn + result.totalTokensOut) / 1_000_000) * 3).toFixed(2)}
+        </span>
+      ) : null}
+      {error ? <span className="mono-label" style={{ color: 'var(--px-orange)', fontSize: 12 }}>{error}</span> : null}
     </div>
   );
 }

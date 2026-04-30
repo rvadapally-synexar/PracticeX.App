@@ -93,28 +93,32 @@ export function DocumentDetailPage() {
       <section className="document-split">
         <Card title="Original document" className="document-source-card">
           {sourceUrl ? (
-            <div className="document-source-fallback">
-              <div className="open-original">
-                <a href={sourceUrl} target="_blank" rel="noreferrer" className="open-original-link">
-                  📄 Open original {isPdf ? 'PDF' : 'document'} in new tab
-                </a>
-                <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                  Inline rendering across origins is unreliable; new tab works perfectly.
-                </div>
-              </div>
-              {detail.layoutSnippet ? (
-                <>
-                  <div className="eyebrow" style={{ marginTop: 16, fontSize: 11 }}>
-                    What we read from this document
+            isPdf ? (
+              <iframe
+                title="Original PDF"
+                src={sourceUrl}
+                className="document-source-frame"
+              />
+            ) : (
+              <div className="document-source-fallback">
+                <div className="open-original">
+                  <a href={sourceUrl} target="_blank" rel="noreferrer" className="open-original-link">
+                    📄 Open original document in new tab
+                  </a>
+                  <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                    Browsers can't render this format inline.
                   </div>
-                  <pre className="layout-snippet">{detail.layoutSnippet}</pre>
-                </>
-              ) : (
-                <div className="muted" style={{ marginTop: 12 }}>
-                  No text snippet available — re-process this document to populate.
                 </div>
-              )}
-            </div>
+                {detail.layoutSnippet ? (
+                  <>
+                    <div className="eyebrow" style={{ marginTop: 16, fontSize: 11 }}>
+                      What we read from this document
+                    </div>
+                    <pre className="layout-snippet">{detail.layoutSnippet}</pre>
+                  </>
+                ) : null}
+              </div>
+            )
           ) : (
             <div className="muted">No source URL.</div>
           )}

@@ -386,81 +386,50 @@ public static class AnalysisEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
+        // Pull every asset for this tenant; prefer LLM-extracted JSON when
+        // present (clean entity names, structured lists), fall back to the
+        // regex output for docs that haven't been LLM-refined yet.
         var assets = await db.DocumentAssets
-            .Where(a => a.TenantId == userContext.TenantId && a.ExtractedFieldsJson != null)
+            .Where(a => a.TenantId == userContext.TenantId &&
+                        (a.LlmExtractedFieldsJson != null || a.ExtractedFieldsJson != null))
             .ToListAsync(cancellationToken);
 
-        // Build a registry of premises addresses across all leases.
         var addressByDoc = new Dictionary<string, string>();
         decimal totalSqft = 0m;
         var amendmentChains = new Dictionary<string, List<string>>();
-        var landlords = new HashSet<string>();
-        var tenants = new HashSet<string>();
-        var counterparties = new HashSet<string>();
+        var landlords = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var tenants = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var counterparties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        var sourceNames = await db.SourceObjects
+            .Where(s => s.TenantId == userContext.TenantId)
+            .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
 
         foreach (var asset in assets)
         {
-            var docName = await db.SourceObjects
-                .Where(s => s.Id == asset.SourceObjectId)
-                .Select(s => s.Name)
-                .FirstOrDefaultAsync(cancellationToken) ?? "(unnamed)";
+            var docName = (asset.SourceObjectId.HasValue && sourceNames.TryGetValue(asset.SourceObjectId.Value, out var n))
+                ? n : "(unnamed)";
 
+            // LLM JSON has the cleanest entity strings; use that when available.
+            if (!string.IsNullOrEmpty(asset.LlmExtractedFieldsJson))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(asset.LlmExtractedFieldsJson);
+                    var root = doc.RootElement;
+                    AbsorbLlmInsights(root, docName, landlords, tenants, counterparties, ref totalSqft, addressByDoc, amendmentChains);
+                    continue;  // LLM data wins, skip regex for this doc
+                }
+                catch { /* fall through to regex */ }
+            }
+
+            if (string.IsNullOrEmpty(asset.ExtractedFieldsJson)) continue;
             try
             {
-                using var doc = JsonDocument.Parse(asset.ExtractedFieldsJson!);
+                using var doc = JsonDocument.Parse(asset.ExtractedFieldsJson);
                 var root = doc.RootElement;
                 if (!root.TryGetProperty("fields", out var fields)) continue;
-
-                foreach (var f in fields.EnumerateArray())
-                {
-                    var name = f.TryGetProperty("name", out var nEl) ? nEl.GetString() ?? "" : "";
-                    if (!f.TryGetProperty("value", out var v) || v.ValueKind == JsonValueKind.Null) continue;
-
-                    if (name == "premises" && v.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var p in v.EnumerateArray())
-                        {
-                            var sqft = p.TryGetProperty("RentableSquareFeet", out var s) && s.TryGetDecimal(out var sd) ? sd : 0m;
-                            var street = p.TryGetProperty("StreetAddress", out var st) ? st.GetString() : null;
-                            totalSqft += sqft;
-                            if (!string.IsNullOrWhiteSpace(street))
-                            {
-                                addressByDoc[docName] = street!;
-                            }
-                        }
-                    }
-                    else if (name == "landlord" && v.ValueKind == JsonValueKind.String)
-                    {
-                        var s = v.GetString();
-                        if (!string.IsNullOrWhiteSpace(s)) landlords.Add(s!);
-                    }
-                    else if (name == "tenant" && v.ValueKind == JsonValueKind.String)
-                    {
-                        var s = v.GetString();
-                        if (!string.IsNullOrWhiteSpace(s)) tenants.Add(s!);
-                    }
-                    else if (name == "amends" && v.ValueKind == JsonValueKind.Object)
-                    {
-                        var parentTitle = v.TryGetProperty("ParentDocumentTitle", out var pt) ? pt.GetString() : null;
-                        if (!string.IsNullOrWhiteSpace(parentTitle))
-                        {
-                            if (!amendmentChains.TryGetValue(parentTitle!, out var chain))
-                            {
-                                chain = new List<string>();
-                                amendmentChains[parentTitle!] = chain;
-                            }
-                            chain.Add(docName);
-                        }
-                    }
-                    else if (name == "parties" && v.ValueKind == JsonValueKind.Array)
-                    {
-                        foreach (var party in v.EnumerateArray())
-                        {
-                            var partyName = party.TryGetProperty("Name", out var pn) ? pn.GetString() : null;
-                            if (!string.IsNullOrWhiteSpace(partyName)) counterparties.Add(partyName!);
-                        }
-                    }
-                }
+                AbsorbRegexInsights(fields, docName, landlords, tenants, counterparties, ref totalSqft, addressByDoc, amendmentChains);
             }
             catch { /* skip malformed */ }
         }
@@ -476,6 +445,134 @@ public static class AnalysisEndpoints
                 .ToList(),
             DocumentAddresses: addressByDoc
         ));
+    }
+
+    private static void AbsorbLlmInsights(
+        JsonElement root,
+        string docName,
+        HashSet<string> landlords,
+        HashSet<string> tenants,
+        HashSet<string> counterparties,
+        ref decimal totalSqft,
+        Dictionary<string, string> addressByDoc,
+        Dictionary<string, List<string>> amendmentChains)
+    {
+        // Lease family: top-level landlord / tenant / premises[].
+        if (root.TryGetProperty("landlord", out var landlord) && landlord.ValueKind == JsonValueKind.String)
+        {
+            var s = landlord.GetString();
+            if (!string.IsNullOrWhiteSpace(s)) landlords.Add(s!);
+        }
+        if (root.TryGetProperty("tenant", out var tenant) && tenant.ValueKind == JsonValueKind.String)
+        {
+            var s = tenant.GetString();
+            if (!string.IsNullOrWhiteSpace(s)) tenants.Add(s!);
+        }
+        if (root.TryGetProperty("premises", out var premises) && premises.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var p in premises.EnumerateArray())
+            {
+                if (p.TryGetProperty("rentable_square_feet", out var sqEl) &&
+                    sqEl.ValueKind == JsonValueKind.Number &&
+                    sqEl.TryGetDecimal(out var sq))
+                {
+                    totalSqft += sq;
+                }
+                if (p.TryGetProperty("street_address", out var stEl) &&
+                    stEl.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(stEl.GetString()))
+                {
+                    addressByDoc[docName] = stEl.GetString()!;
+                }
+            }
+        }
+
+        // Lease amendment: parent_agreement_date references the original lease.
+        if (root.TryGetProperty("parent_agreement_date", out var parent) &&
+            parent.ValueKind == JsonValueKind.String &&
+            !string.IsNullOrWhiteSpace(parent.GetString()))
+        {
+            var key = $"Lease Agreement dated {parent.GetString()}";
+            if (!amendmentChains.TryGetValue(key, out var chain))
+            {
+                chain = new List<string>();
+                amendmentChains[key] = chain;
+            }
+            if (!chain.Contains(docName)) chain.Add(docName);
+        }
+
+        // NDA / employment / call coverage: parties[] (objects with "name").
+        if (root.TryGetProperty("parties", out var parties) && parties.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var party in parties.EnumerateArray())
+            {
+                if (party.TryGetProperty("name", out var nm) &&
+                    nm.ValueKind == JsonValueKind.String &&
+                    !string.IsNullOrWhiteSpace(nm.GetString()))
+                {
+                    counterparties.Add(nm.GetString()!);
+                }
+            }
+        }
+    }
+
+    private static void AbsorbRegexInsights(
+        JsonElement fields,
+        string docName,
+        HashSet<string> landlords,
+        HashSet<string> tenants,
+        HashSet<string> counterparties,
+        ref decimal totalSqft,
+        Dictionary<string, string> addressByDoc,
+        Dictionary<string, List<string>> amendmentChains)
+    {
+        foreach (var f in fields.EnumerateArray())
+        {
+            var name = f.TryGetProperty("name", out var nEl) ? nEl.GetString() ?? "" : "";
+            if (!f.TryGetProperty("value", out var v) || v.ValueKind == JsonValueKind.Null) continue;
+
+            if (name == "premises" && v.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var p in v.EnumerateArray())
+                {
+                    var sqft = p.TryGetProperty("RentableSquareFeet", out var s) && s.TryGetDecimal(out var sd) ? sd : 0m;
+                    var street = p.TryGetProperty("StreetAddress", out var st) ? st.GetString() : null;
+                    totalSqft += sqft;
+                    if (!string.IsNullOrWhiteSpace(street)) addressByDoc[docName] = street!;
+                }
+            }
+            else if (name == "landlord" && v.ValueKind == JsonValueKind.String)
+            {
+                var s = v.GetString();
+                if (!string.IsNullOrWhiteSpace(s)) landlords.Add(s!);
+            }
+            else if (name == "tenant" && v.ValueKind == JsonValueKind.String)
+            {
+                var s = v.GetString();
+                if (!string.IsNullOrWhiteSpace(s)) tenants.Add(s!);
+            }
+            else if (name == "amends" && v.ValueKind == JsonValueKind.Object)
+            {
+                var parentTitle = v.TryGetProperty("ParentDocumentTitle", out var pt) ? pt.GetString() : null;
+                if (!string.IsNullOrWhiteSpace(parentTitle))
+                {
+                    if (!amendmentChains.TryGetValue(parentTitle!, out var chain))
+                    {
+                        chain = new List<string>();
+                        amendmentChains[parentTitle!] = chain;
+                    }
+                    chain.Add(docName);
+                }
+            }
+            else if (name == "parties" && v.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var party in v.EnumerateArray())
+                {
+                    var partyName = party.TryGetProperty("Name", out var pn) ? pn.GetString() : null;
+                    if (!string.IsNullOrWhiteSpace(partyName)) counterparties.Add(partyName!);
+                }
+            }
+        }
     }
 
     private static string MapToFamily(string candidateType) => candidateType switch

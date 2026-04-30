@@ -421,7 +421,20 @@ export const analysisApi = {
   getFacilities: () => request<Facility[]>('/analysis/facilities'),
   llmExtract: (assetId: string) =>
     request<LlmExtractionResult>(`/analysis/documents/${assetId}/llm-extract`, { method: 'POST' }),
+  llmExtractBatch: (force = false) =>
+    request<BatchExtractionResult>(`/analysis/llm-extract-batch${force ? '?force=true' : ''}`, { method: 'POST' }),
 };
+
+export interface BatchExtractionResult {
+  total: number;
+  refined: number;
+  skipped: number;
+  failed: number;
+  totalTokensIn: number;
+  totalTokensOut: number;
+  latencyMs: number;
+  notes: string | null;
+}
 
 export function readableRelativeTime(iso: string): string {
   const then = new Date(iso).getTime();
