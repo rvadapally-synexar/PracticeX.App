@@ -59,6 +59,20 @@ public sealed class DocumentAsset : Entity
     public int? LlmTokensIn { get; set; }
     public int? LlmTokensOut { get; set; }
     public string? LlmExtractionStatus { get; set; }
+
+    // Slice 16: Document Intelligence Brief — stage 1 of the two-pass LLM
+    // pipeline. The markdown narrative authored by the model in
+    // healthcare-attorney persona; consumed by the UI's "Intelligence Brief"
+    // tab and by stage 2 (which extracts structured JSON from this brief
+    // into LlmExtractedFieldsJson).
+    public string? LlmNarrativeMd { get; set; }
+    public string? LlmNarrativeModel { get; set; }
+    public int? LlmNarrativeTokensIn { get; set; }
+    public int? LlmNarrativeTokensOut { get; set; }
+    public DateTimeOffset? LlmNarrativeExtractedAt { get; set; }
+    public decimal? LlmNarrativeTemperature { get; set; }
+    public string? LlmNarrativeStatus { get; set; }
+    public int? LlmNarrativeLatencyMs { get; set; }
 }
 
 public static class ComplexityTierCodes

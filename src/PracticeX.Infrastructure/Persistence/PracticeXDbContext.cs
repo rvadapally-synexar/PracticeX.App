@@ -205,6 +205,12 @@ public class PracticeXDbContext(DbContextOptions<PracticeXDbContext> options) : 
             entity.Property(x => x.LlmExtractedFieldsJson).HasColumnType("jsonb");
             entity.Property(x => x.LlmExtractorModel).HasMaxLength(120);
             entity.Property(x => x.LlmExtractionStatus).HasMaxLength(40);
+
+            // Slice 16: narrative brief (stage 1 of two-pass LLM pipeline).
+            entity.Property(x => x.LlmNarrativeMd).HasColumnType("text");
+            entity.Property(x => x.LlmNarrativeModel).HasMaxLength(120);
+            entity.Property(x => x.LlmNarrativeStatus).HasMaxLength(40);
+            entity.Property(x => x.LlmNarrativeTemperature).HasColumnType("numeric(3,2)");
         });
 
         modelBuilder.Entity<DocumentCandidate>(entity =>
