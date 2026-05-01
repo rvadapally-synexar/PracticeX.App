@@ -62,28 +62,36 @@ export function CommandCenterPage() {
       </header>
 
       <section className="kpi-grid">
-        <KpiCard
-          label="Documents processed"
-          value={stats.documents.toString()}
-          helper={`${portfolio.totalPages} pages · ${stats.totalSizeMb.toFixed(1)} MB`}
-        />
-        <KpiCard
-          label="Candidates extracted"
-          value={stats.candidates.toString()}
-          helper={`Across ${stats.ingestionBatches} ingestion batch${stats.ingestionBatches === 1 ? '' : 'es'}`}
-          tone="accent"
-        />
-        <KpiCard
-          label="Awaiting review"
-          value={stats.reviewQueueDepth.toString()}
-          helper={stats.reviewQueueDepth === 0 ? 'Queue empty' : 'Confirm or correct extractions'}
-          tone={stats.reviewQueueDepth > 0 ? 'warn' : undefined}
-        />
-        <KpiCard
-          label="Doc Intelligence pages"
-          value={stats.docIntelPagesProcessed.toString()}
-          helper={`Azure cost · $${stats.estimatedDocIntelCostUsd.toFixed(2)}`}
-        />
+        <Link to="/portfolio" className="kpi-link" aria-label="Open portfolio">
+          <KpiCard
+            label="Documents processed"
+            value={stats.documents.toString()}
+            helper={`${portfolio.totalPages} pages · ${stats.totalSizeMb.toFixed(1)} MB`}
+          />
+        </Link>
+        <Link to="/portfolio" className="kpi-link" aria-label="Open candidates">
+          <KpiCard
+            label="Candidates extracted"
+            value={stats.candidates.toString()}
+            helper={`Across ${stats.ingestionBatches} ingestion batch${stats.ingestionBatches === 1 ? '' : 'es'}`}
+            tone="accent"
+          />
+        </Link>
+        <Link to="/review" className="kpi-link" aria-label="Open review queue">
+          <KpiCard
+            label="Awaiting review"
+            value={stats.reviewQueueDepth.toString()}
+            helper={stats.reviewQueueDepth === 0 ? 'Queue empty' : 'Confirm or correct extractions'}
+            tone={stats.reviewQueueDepth > 0 ? 'warn' : undefined}
+          />
+        </Link>
+        <Link to="/portfolio" className="kpi-link" aria-label="Open OCR'd documents">
+          <KpiCard
+            label="Doc Intelligence pages"
+            value={stats.docIntelPagesProcessed.toString()}
+            helper={`Azure cost · $${stats.estimatedDocIntelCostUsd.toFixed(2)}`}
+          />
+        </Link>
       </section>
 
       <section className="grid-2">
@@ -93,12 +101,20 @@ export function CommandCenterPage() {
           ) : (
             <div className="doc-table">
               {portfolio.families.map((f) => (
-                <div key={f.family} className="doc-row" style={{ gridTemplateColumns: 'minmax(0, 1.4fr) 80px 90px 90px', cursor: 'default' }}>
+                <Link
+                  key={f.family}
+                  to={`/portfolio?family=${encodeURIComponent(f.family)}`}
+                  className="doc-row"
+                  style={{
+                    gridTemplateColumns: 'minmax(0, 1.4fr) 80px 90px 90px',
+                    textDecoration: 'none',
+                  }}
+                >
                   <div className="doc-row-name">{f.family.replace(/_/g, ' ')}</div>
                   <div className="doc-row-meta">{f.documentCount} doc{f.documentCount === 1 ? '' : 's'}</div>
                   <div className="doc-row-meta">{f.totalPages} pgs</div>
                   <div className="doc-row-meta">{f.totalSizeMb.toFixed(1)} MB</div>
-                </div>
+                </Link>
               ))}
             </div>
           )}

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card, KpiCard, StatusChip } from '@practicex/design-system';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -23,7 +23,19 @@ type LoadState =
 
 export function PortfolioPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
-  const [familyFilter, setFamilyFilter] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const familyFilter = searchParams.get('family');
+  const setFamilyFilter = (next: string | null) => {
+    setSearchParams(
+      (prev) => {
+        const np = new URLSearchParams(prev);
+        if (next) np.set('family', next);
+        else np.delete('family');
+        return np;
+      },
+      { replace: true },
+    );
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -158,7 +170,7 @@ export function PortfolioPage() {
             family={family}
             isActive={familyFilter === family.family}
             onClick={() =>
-              setFamilyFilter((cur) => (cur === family.family ? null : family.family))
+              setFamilyFilter(familyFilter === family.family ? null : family.family)
             }
           />
         ))}

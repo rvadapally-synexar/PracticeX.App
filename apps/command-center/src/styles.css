@@ -885,6 +885,20 @@ select {
   /* fields pane was previously the whole card body — migrate styling here */
 }
 
+/* KPI cards on Command Center are clickable links */
+.kpi-link {
+  text-decoration: none;
+  color: inherit;
+  display: block;
+  border-radius: 12px;
+  transition: transform 80ms ease, box-shadow 80ms ease;
+}
+.kpi-link:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+.kpi-link:focus { outline: 2px solid var(--px-orange, #d4631e); outline-offset: 2px; }
+
+/* Doc-row hover when used as a Link (already applied to docs; ensure family rows have it too) */
+a.doc-row:hover { background: var(--px-bg-1, #fafafa); }
+
 /* Family cards on PortfolioPage are now clickable filter buttons */
 .family-card-button {
   background: transparent;
