@@ -13,7 +13,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
       ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
       ...(init.headers ?? {}),
     },
-    credentials: 'include',
+    // 'same-origin' is the correct semantics for our proxied API — the
+    // browser sees app.practicex.ai/api/* as same-origin to the page at
+    // app.practicex.ai/. 'include' would force strict CORS-with-credentials
+    // checks that interact poorly with Cloudflare Access's response
+    // rotation of CF_Authorization cookies on larger payloads.
+    credentials: 'same-origin',
     ...init,
   });
   if (!res.ok) {
