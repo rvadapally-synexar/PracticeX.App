@@ -30,17 +30,17 @@ You will receive:
 
 ## OUTPUT FORMAT (MANDATORY)
 
-You MUST emit the following 14 sections in this exact order. Every section
+You MUST emit the following 15 sections in this exact order. Every section
 header is a level-2 markdown header (`## NN — Title`). Sections may not be
 omitted; if a section is not applicable, write the heading and a single
-italicized sentence explaining why ("*Not applicable — this is a master
-lease, no parent agreement to summarize.*").
+italicized sentence explaining why.
 
 Do **not** wrap the output in code fences. Do **not** preface with "Here is
-the brief:". Begin directly with section 1.
+the brief:". Begin directly with section 0.
 
 ### Sections
 
+0. **CANONICAL HEADLINE** — 12 must-extract fields the practice's CFO sees first
 1. **Document Header** — type, amendment number, executed-vs-template, signature posture
 2. **Parties & Roles** — landlord, tenant, guarantors, brokers, defined-term abbreviations
 3. **Premises & Footprint** — street, suite, rentable square feet, parking, exclusivity
@@ -59,6 +59,63 @@ the brief:". Begin directly with section 1.
 ---
 
 ## SECTION-BY-SECTION INSTRUCTIONS
+
+### 0 — CANONICAL HEADLINE (MANDATORY — NEVER OMIT A FIELD)
+
+These twelve fields are the headline view the practice's CFO and managing
+partners read first. **Every field must appear** with either a real value
+or the explicit phrase `— not stated in this document` followed by a
+`(look here: <hint>)` clause that tells the practice where to look or
+what other document to check.
+
+For numeric values: include units in the rendered string (e.g.,
+`$23,570/month`, `16,806 RSF`, `2.5%`, `60 months`). Where the source
+states one form (`$16.83/RSF/yr`) and the headline calls for another
+(`$23,570/month`), compute it and cite the computation explicitly.
+
+Output format — labeled list, in this exact order:
+
+- **Landlord:** <legal entity name>
+- **Tenant:** <legal entity name>
+- **Premises Address:** <street + city + state>
+- **Total Rentable Sqft:** <integer>
+- **Term Length:** <integer> months
+- **Commencement Date:** <YYYY-MM-DD>
+- **Expiration Date:** <YYYY-MM-DD>
+- **Base Rent (monthly):** $<number> *(citation: <quote or computation>)*
+- **Base Rent ($/RSF/yr):** $<number> *(citation: <quote>)*
+- **Operating Cost Treatment:** Gross | Modified Gross | NN | NNN
+- **Annual Escalation:** <number>%
+- **Is Signed:** Yes / No
+
+✅ Worked example for an LOI:
+> - **Landlord:** Flagship Greensboro PMC, LLC
+> - **Tenant:** Eagle Physicians and Associates, P.A.
+> - **Premises Address:** 1002 N. Church Street, Greensboro, NC
+> - **Total Rentable Sqft:** 16,806 RSF (sum of Suite 002 [7,622] + Suite 201/403 [9,184])
+> - **Term Length:** 60 months (5 years; LOI also offers 7-year alternative)
+> - **Commencement Date:** 2027-10-01
+> - **Expiration Date:** *— not stated in this document* (look here: derive from commencement + 60 months → 2032-09-30)
+> - **Base Rent (monthly):** $23,570.42 *(citation: computed from $16.83/RSF/yr × 16,806 RSF ÷ 12)*
+> - **Base Rent ($/RSF/yr):** $16.83 *(citation: "The Year One rental rate will be $16.83 /RSF/yr triple net (NNN)")*
+> - **Operating Cost Treatment:** NNN
+> - **Annual Escalation:** 2.5%
+> - **Is Signed:** No (this is an LOI; explicitly non-binding)
+
+❌ Wrong (silently omits a field):
+> - **Landlord:** Flagship Greensboro PMC, LLC
+> - **Tenant:** Eagle Physicians and Associates, P.A.
+> - **Premises Address:** 1002 N. Church Street, Greensboro, NC
+> *(skips RSF, term, rent, escalation — fail.)*
+
+❌ Wrong (uses null without citation):
+> - **Base Rent (monthly):** null
+> *(should be: `— not stated in this document` plus a `look here: <hint>`)*
+
+If you cannot extract a value AND cannot point to where to look, write
+`— not stated in this document` followed by *(look here: not present;
+should be confirmed in a definitive lease)*. Never silently omit. Never
+output `null`.
 
 ### 1 — Document Header
 

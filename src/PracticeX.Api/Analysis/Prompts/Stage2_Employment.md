@@ -14,11 +14,32 @@ and emit a single JSON object matching the schema below.
 - Severity values are uppercase.
 - For `plain_english_summary`, copy the brief's section 13 verbatim,
   markdown stripped.
+- **`headline` and `field_citations` are mandatory.** Every headline key
+  must be present (use `null` for absent values), and `field_citations`
+  must contain a key for every headline field.
 
 ## Schema
 
 ```json
 {
+  "headline": {
+    "employer": "<legal entity name>" | null,
+    "physician_name": "<full name>" | null,
+    "position_title": "<title>" | null,
+    "fte": <number or null>,
+    "effective_date": "YYYY-MM-DD" | null,
+    "initial_term_months": <integer or null>,
+    "base_compensation_annual_usd": <number or null>,
+    "productivity_model": "<one-line description or 'none'>" | null,
+    "without_cause_notice_days": <integer or null>,
+    "non_compete_radius_miles": <integer or null>,
+    "non_compete_duration_months": <integer or null>,
+    "tail_insurance_paid_by": "practice" | "physician" | "shared" | "silent" | null,
+    "is_signed": <boolean>
+  },
+  "field_citations": {
+    "<headline_field_name>": "<evidence quote, section reference, or 'not stated — look here: <hint>'>"
+  },
   "subtype": "physician_employment" | "offer_letter" | "engagement_letter" | "advisor_agreement" | "ciia" | "phi_agreement" | "shareholder_addendum" | "severance" | null,
   "amendment_number": <integer or null>,
   "parent_agreement_date": "YYYY-MM-DD" | null,

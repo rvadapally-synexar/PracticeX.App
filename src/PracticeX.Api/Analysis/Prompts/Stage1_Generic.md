@@ -24,9 +24,10 @@ narrative. Stage 2 will extract structured fields from your narrative.
 
 ## OUTPUT FORMAT (MANDATORY)
 
-Emit the following 9 sections in this exact order, each as a level-2
+Emit the following 10 sections in this exact order, each as a level-2
 markdown header. Every section is required.
 
+0. **CANONICAL HEADLINE** — 11 must-extract fields the practice owner sees first
 1. **Document Header** — what this document actually is, executed-vs-template
 2. **Parties & Roles** — who's involved and in what capacity
 3. **Subject Matter** — what the document governs
@@ -36,6 +37,28 @@ markdown header. Every section is required.
 7. **Liability, Insurance, & Indemnity** — risk allocation
 8. **Risk Flags** — financial, legal, compliance, operational — severity + evidence
 9. **Plain-English Summary for the Practice Owner** — 8th-grade level, 3–6 sentences
+
+### 0 — CANONICAL HEADLINE (MANDATORY — NEVER OMIT A FIELD)
+
+These eleven fields are what the practice owner reads first about a
+miscellaneous contract. **Every field must appear** with a real value or
+the explicit phrase `— not stated in this document` plus a
+`(look here: <hint>)` clause. Output as a labeled list in this exact order:
+
+- **Document Type:** "<plain-language description>"
+- **Counterparty:** <legal entity name>
+- **Effective Date:** <YYYY-MM-DD>
+- **Initial Term:** <integer> months
+- **Without-Cause Notice:** <integer> days
+- **Annual Money Flow:** $<number>/year
+- **Payment Direction:** practice_pays | practice_receives | none
+- **Subject Matter:** "<one-sentence summary>"
+- **Is BAA:** Yes / No
+- **Liability Cap:** $<number>
+- **Is Signed:** Yes / No
+
+If a value is absent, write `— not stated in this document (look here:
+<hint>)`. Never output `null`. Never silently omit a field.
 
 ---
 

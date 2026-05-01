@@ -20,11 +20,34 @@ emit a single JSON object matching the schema below.
   exactly. Severity values are uppercase: `HIGH`, `MED`, `LOW`.
 - For `plain_english_summary`, copy the brief's section 14 verbatim
   (or as close as possible while removing markdown).
+- **`headline` is mandatory.** Every key must be present. Use `null` for
+  values the brief marks as "not stated".
+- **`field_citations` is mandatory** and must contain a key for every
+  headline field. The value is the brief's citation/quote/evidence string
+  for that field, or `"not stated — look here: <hint>"` when the brief
+  said the field was absent.
 
 ## Schema
 
 ```json
 {
+  "headline": {
+    "landlord": "<legal entity name>" | null,
+    "tenant": "<legal entity name>" | null,
+    "premises_address": "<street + city + state>" | null,
+    "total_rentable_sqft": <integer or null>,
+    "term_months": <integer or null>,
+    "commencement_date": "YYYY-MM-DD" | null,
+    "expiration_date": "YYYY-MM-DD" | null,
+    "base_rent_monthly_usd": <number or null>,
+    "base_rent_per_rsf_yr_usd": <number or null>,
+    "operating_cost_treatment": "gross" | "modified_gross" | "nn" | "nnn" | null,
+    "annual_escalation_pct": <number or null>,
+    "is_signed": <boolean>
+  },
+  "field_citations": {
+    "<headline_field_name>": "<evidence quote, section reference, or 'not stated — look here: <hint>'>"
+  },
   "subtype": "master_lease" | "lease_amendment" | "lease_loi" | "sublease" | null,
   "amendment_number": <integer or null>,
   "parent_agreement_date": "YYYY-MM-DD" | null,

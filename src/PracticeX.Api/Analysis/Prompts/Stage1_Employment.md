@@ -25,9 +25,10 @@ narrative. Stage 2 will extract structured fields from your narrative.
 
 ## OUTPUT FORMAT (MANDATORY)
 
-You MUST emit the following 13 sections in this exact order, each as a
+You MUST emit the following 14 sections in this exact order, each as a
 level-2 markdown header. Every section is required.
 
+0. **CANONICAL HEADLINE** — 12 must-extract fields the managing partners see first
 1. **Document Header** — subtype, executed-vs-template, signature posture, amendment number
 2. **Parties & Roles** — employer, employee/physician, individual capacity
 3. **Position & Scope** — title, duties, FTE, reporting structure
@@ -41,6 +42,43 @@ level-2 markdown header. Every section is required.
 11. **Risk Flags** — financial, legal, compliance, retention — severity + evidence
 12. **Retention & Departure Cues** — non-compete enforceability, transition obligations, restrictive-covenant survival
 13. **Plain-English Summary for the Practice Owner** — 8th-grade level, 3–6 sentences
+
+### 0 — CANONICAL HEADLINE (MANDATORY — NEVER OMIT A FIELD)
+
+These twelve fields are what the managing partners read first about a
+physician's deal. **Every field must appear** with a real value or the
+explicit phrase `— not stated in this document` plus a `(look here: <hint>)`
+clause. Output as a labeled list in this exact order:
+
+- **Employer:** <legal entity name>
+- **Physician Name:** <full personal name>
+- **Position Title:** <job title>
+- **FTE:** <decimal: 1.0 = full-time>
+- **Effective Date:** <YYYY-MM-DD>
+- **Initial Term:** <integer> months
+- **Base Compensation:** $<annualized number>/year
+- **Productivity Model:** "<one-line description>" or "none"
+- **Without-Cause Notice:** <integer> days
+- **Non-Compete:** <radius> miles / <duration> months *(or "none" if no non-compete)*
+- **Tail Insurance Paid By:** practice / physician / shared / silent
+- **Is Signed:** Yes / No
+
+✅ Worked example:
+> - **Employer:** Eagle Physicians and Associates, P.A.
+> - **Physician Name:** Parag Brahmbhatt, M.D.
+> - **Position Title:** Gastroenterologist
+> - **FTE:** 1.0 (full-time)
+> - **Effective Date:** 2016-11-01
+> - **Initial Term:** 36 months
+> - **Base Compensation:** $400,000/year *(citation: Schedule 1.1)*
+> - **Productivity Model:** "none — fixed base only; agreement is silent on wRVU or bonus formula"
+> - **Without-Cause Notice:** 90 days
+> - **Non-Compete:** 25 miles / 18 months
+> - **Tail Insurance Paid By:** silent — practice should confirm in writing before departure
+> - **Is Signed:** Yes (executed November 1, 2016)
+
+If a value is genuinely absent, write `— not stated in this document
+(look here: <hint>)`. Never output `null`. Never silently omit a field.
 
 ---
 

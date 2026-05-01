@@ -15,11 +15,30 @@ emit a single JSON object matching the schema below.
 - Severity values are uppercase.
 - For `plain_english_summary`, copy the brief's section 9 verbatim,
   markdown stripped.
+- **`headline` and `field_citations` are mandatory.** Every headline key
+  must be present (use `null` for absent values), and `field_citations`
+  must contain a key for every headline field.
 
 ## Schema
 
 ```json
 {
+  "headline": {
+    "document_type": "<plain-language type>" | null,
+    "counterparty_name": "<legal entity>" | null,
+    "effective_date": "YYYY-MM-DD" | null,
+    "initial_term_months": <integer or null>,
+    "without_cause_notice_days": <integer or null>,
+    "annual_money_flow_usd": <number or null>,
+    "payment_direction": "practice_pays" | "practice_receives" | "none" | null,
+    "subject_matter_summary": "<one-sentence>" | null,
+    "is_baa": <boolean or null>,
+    "liability_cap_usd": <number or null>,
+    "is_signed": <boolean>
+  },
+  "field_citations": {
+    "<headline_field_name>": "<evidence quote, section reference, or 'not stated — look here: <hint>'>"
+  },
   "document_type": "<short description from brief>",
   "effective_date": "YYYY-MM-DD" | null,
   "parties": [

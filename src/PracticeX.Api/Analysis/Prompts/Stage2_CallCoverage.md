@@ -14,11 +14,31 @@ and emit a single JSON object matching the schema below.
 - Severity values are uppercase.
 - For `plain_english_summary`, copy the brief's section 12 verbatim,
   markdown stripped.
+- **`headline` and `field_citations` are mandatory.** Every headline key
+  must be present (use `null` for absent values), and `field_citations`
+  must contain a key for every headline field.
 
 ## Schema
 
 ```json
 {
+  "headline": {
+    "covering_group": "<legal entity name>" | null,
+    "covered_facility": "<facility name>" | null,
+    "coverage_specialty": "<specialty>" | null,
+    "effective_date": "YYYY-MM-DD" | null,
+    "initial_term_months": <integer or null>,
+    "stipend_basis": "per_shift" | "per_day" | "per_week" | "monthly_retainer" | "hourly" | null,
+    "stipend_amount_usd": <number or null>,
+    "coverage_schedule_summary": "<one-line summary>" | null,
+    "response_time_phone_minutes": <integer or null>,
+    "without_cause_notice_days": <integer or null>,
+    "malpractice_provided_by": "covering_group" | "covered_facility" | "shared" | "silent" | null,
+    "fmv_certified": <boolean or null>
+  },
+  "field_citations": {
+    "<headline_field_name>": "<evidence quote, section reference, or 'not stated — look here: <hint>'>"
+  },
   "effective_date": "YYYY-MM-DD" | null,
   "parties": [
     {

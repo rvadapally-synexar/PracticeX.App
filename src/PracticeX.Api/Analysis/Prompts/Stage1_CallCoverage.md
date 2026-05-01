@@ -27,9 +27,10 @@ narrative. Stage 2 will extract structured fields from your narrative.
 
 ## OUTPUT FORMAT (MANDATORY)
 
-Emit the following 12 sections in this exact order, each as a level-2
+Emit the following 13 sections in this exact order, each as a level-2
 markdown header. Every section is required.
 
+0. **CANONICAL HEADLINE** — 12 must-extract fields the practice owner sees first
 1. **Document Header** — type, executed-vs-template, signature posture, parent agreement
 2. **Parties & Roles** — covering group, covered facility, individual physicians
 3. **Coverage Scope** — specialty, services covered, exclusions
@@ -42,6 +43,43 @@ markdown header. Every section is required.
 10. **Risk Flags** — financial, legal, compliance, operational — severity + evidence
 11. **Scheduling-Bridge Cues** — fields that feed the contract-aware scheduling engine
 12. **Plain-English Summary for the Practice Owner** — 8th-grade level, 3–6 sentences
+
+### 0 — CANONICAL HEADLINE (MANDATORY — NEVER OMIT A FIELD)
+
+These twelve fields are what the practice owner reads first when reviewing
+a call-coverage arrangement. **Every field must appear** with a real value
+or the explicit phrase `— not stated in this document` plus a
+`(look here: <hint>)` clause. Output as a labeled list in this exact order:
+
+- **Covering Group:** <legal entity providing coverage>
+- **Covered Facility:** <hospital / facility receiving coverage>
+- **Coverage Specialty:** <e.g., gastroenterology>
+- **Effective Date:** <YYYY-MM-DD>
+- **Initial Term:** <integer> months
+- **Stipend Basis:** per_shift | per_day | per_week | monthly_retainer | hourly
+- **Stipend Amount:** $<number> per <basis>
+- **Coverage Schedule:** "<one-line summary, e.g., 'weekend GI call, Fri 5pm – Mon 7am'>"
+- **Phone Response Time:** <integer> minutes
+- **Without-Cause Notice:** <integer> days
+- **Malpractice Provided By:** covering_group / covered_facility / shared / silent
+- **FMV Certified:** Yes / No
+
+✅ Worked example:
+> - **Covering Group:** Eagle Physicians and Associates, P.A.
+> - **Covered Facility:** Cone Health (Moses Cone + Wesley Long Hospitals)
+> - **Coverage Specialty:** gastroenterology
+> - **Effective Date:** 2024-05-14
+> - **Initial Term:** 24 months
+> - **Stipend Basis:** per_day
+> - **Stipend Amount:** $1,800 per day
+> - **Coverage Schedule:** "weekend on-call, Fri 5pm through Mon 7am, ~60 hours/shift"
+> - **Phone Response Time:** 30 minutes
+> - **Without-Cause Notice:** 90 days
+> - **Malpractice Provided By:** covering_group
+> - **FMV Certified:** Yes (explicit certification in §6.2)
+
+If a value is absent, write `— not stated in this document (look here:
+<hint>)`. Never output `null`. Never silently omit a field.
 
 ---
 

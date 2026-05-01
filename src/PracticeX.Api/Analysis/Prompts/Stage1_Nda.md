@@ -26,10 +26,11 @@ classify the **transaction context** in plain language.
 
 ## OUTPUT FORMAT (MANDATORY)
 
-You MUST emit the following 11 sections in this exact order, each as a
+You MUST emit the following 12 sections in this exact order, each as a
 level-2 markdown header. Every section is required; if not applicable,
 write the header and a single italicized sentence explaining why.
 
+0. **CANONICAL HEADLINE** — 12 must-extract fields the practice owner sees first
 1. **Document Header** — type, executed-vs-template, signature posture
 2. **Parties & Roles** — disclosing party, receiving party, mutual?
 3. **Transaction Context** — what business situation triggered this NDA?
@@ -41,6 +42,44 @@ write the header and a single italicized sentence explaining why.
 9. **Risk Flags** — financial, legal, strategic — severity + evidence
 10. **Strategic Cues** — M&A signal, recruitment signal, payor leverage signal
 11. **Plain-English Summary for the Practice Owner** — 8th-grade level, 3–6 sentences
+
+### 0 — CANONICAL HEADLINE (MANDATORY — NEVER OMIT A FIELD)
+
+These twelve fields are the headline the practice owner sees first when
+reviewing this NDA. **Every field must appear** with a real value or the
+explicit phrase `— not stated in this document` plus a `(look here: <hint>)`
+clause. Output as a labeled list in this exact order:
+
+- **Counterparty:** <legal entity or individual name>
+- **Counterparty Class:** health system | private equity | physician group | vendor | payor | investor | individual | unknown
+- **Mutual:** Yes / No
+- **Effective Date:** <YYYY-MM-DD>
+- **Discussion Term:** <integer> months
+- **Confidentiality Survival:** <integer> months
+- **Trade Secret Perpetual:** Yes / No
+- **Permitted Purpose:** "<verbatim quote of operative clause>"
+- **Acquirer Signal:** Yes / No *(derived: true if M&A subtype + acquirer-language purpose)*
+- **Standstill Clause:** Yes / No
+- **Non-Solicitation:** Yes / No
+- **Is Signed:** Yes / No
+
+✅ Worked example:
+> - **Counterparty:** Wake Forest University Baptist Medical Center, Inc.
+> - **Counterparty Class:** health system
+> - **Mutual:** Yes
+> - **Effective Date:** 2023-10-12
+> - **Discussion Term:** 24 months
+> - **Confidentiality Survival:** 60 months
+> - **Trade Secret Perpetual:** Yes
+> - **Permitted Purpose:** "to evaluate a potential asset purchase, employment arrangement, or other business restructuring"
+> - **Acquirer Signal:** Yes *(M&A target subtype; counterparty's "Core Market Growth and Business Development" division signed; permitted-purpose language names asset purchase)*
+> - **Standstill Clause:** No
+> - **Non-Solicitation:** Yes
+> - **Is Signed:** Yes
+
+If a value is genuinely absent from this document, write `— not stated in
+this document` followed by *(look here: <hint>)*. Never output `null`.
+Never silently omit a field.
 
 ---
 
