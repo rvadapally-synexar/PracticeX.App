@@ -96,14 +96,47 @@ export function DocumentDetailPage() {
       <LlmActionRow detail={detail} hasLlm={hasLlm} onUpdated={(d) => setState({ kind: 'ready', detail: d })} />
 
       <section className="document-split">
-        <Card title="Original document" className="document-source-card">
+        <Card
+          title="Original document"
+          className="document-source-card"
+          actions={
+            sourceUrl ? (
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="px-button px-button-secondary"
+                style={{ textDecoration: 'none', fontSize: 12, padding: '4px 10px' }}
+              >
+                Open in new tab
+              </a>
+            ) : null
+          }
+        >
           {sourceUrl ? (
             isPdf ? (
-              <iframe
-                title="Original PDF"
-                src={sourceUrl}
+              // <object> with filename-bearing URL is the standard PDF
+              // embedding pattern — better cross-browser inline support
+              // than <iframe>, and the fallback children render when the
+              // browser refuses inline rendering (e.g. very large PDFs in
+              // certain Chrome configurations).
+              <object
+                data={`${sourceUrl}#toolbar=1&navpanes=0&view=FitH`}
+                type="application/pdf"
                 className="document-source-frame"
-              />
+                aria-label={`Original PDF: ${detail.fileName}`}
+              >
+                <div className="document-source-fallback">
+                  <div className="open-original">
+                    <a href={sourceUrl} target="_blank" rel="noreferrer" className="open-original-link">
+                      📄 Open original document in new tab
+                    </a>
+                    <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+                      Browser refused inline rendering — file may be too large.
+                    </div>
+                  </div>
+                </div>
+              </object>
             ) : (
               <div className="document-source-fallback">
                 <div className="open-original">
