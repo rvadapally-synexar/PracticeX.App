@@ -25,6 +25,17 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 256L * 1024 * 1024;
 });
 
+// Slice 16.6 hedge: gzip compression for large narrative responses.
+// 30KB JSON briefs compress to ~5KB on the wire — important if any
+// upstream proxy has a payload-size threshold for OTP-authenticated paths.
+builder.Services.AddResponseCompression(options =>
+{
+    options.EnableForHttps = true;
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.GzipCompressionProvider>();
+    options.Providers.Add<Microsoft.AspNetCore.ResponseCompression.BrotliCompressionProvider>();
+    options.MimeTypes = ["application/json", "application/json; charset=utf-8", "text/plain", "text/markdown"];
+});
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("CommandCenter", policy =>
@@ -62,6 +73,7 @@ if (app.Environment.IsDevelopment())
     });
 }
 
+app.UseResponseCompression();
 app.UseCors("CommandCenter");
 app.UseHttpsRedirection();
 
