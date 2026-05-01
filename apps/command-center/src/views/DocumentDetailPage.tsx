@@ -97,7 +97,12 @@ export function DocumentDetailPage() {
 
       <section className="document-split">
         <Card
-          title="Original document"
+          eyebrow={
+            detail.layoutProvider
+              ? `OCR via ${detail.layoutProvider}${detail.layoutPageCount ? ` · ${detail.layoutPageCount} pages` : ''}`
+              : 'Local text extraction'
+          }
+          title="What we read from this document"
           className="document-source-card"
           actions={
             sourceUrl ? (
@@ -105,60 +110,43 @@ export function DocumentDetailPage() {
                 href={sourceUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="px-button px-button-secondary"
-                style={{ textDecoration: 'none', fontSize: 12, padding: '4px 10px' }}
+                className="px-button"
+                style={{
+                  textDecoration: 'none',
+                  fontSize: 12,
+                  padding: '6px 14px',
+                  background: 'var(--px-orange, #d4631e)',
+                  color: '#fff',
+                  borderRadius: 6,
+                  fontWeight: 600,
+                }}
               >
-                Open in new tab
+                {isPdf ? '📄 Open PDF' : '📄 Open original'}
               </a>
             ) : null
           }
         >
-          {sourceUrl ? (
-            isPdf ? (
-              // <object> with filename-bearing URL is the standard PDF
-              // embedding pattern — better cross-browser inline support
-              // than <iframe>, and the fallback children render when the
-              // browser refuses inline rendering (e.g. very large PDFs in
-              // certain Chrome configurations).
-              <object
-                data={`${sourceUrl}#toolbar=1&navpanes=0&view=FitH`}
-                type="application/pdf"
-                className="document-source-frame"
-                aria-label={`Original PDF: ${detail.fileName}`}
-              >
-                <div className="document-source-fallback">
-                  <div className="open-original">
-                    <a href={sourceUrl} target="_blank" rel="noreferrer" className="open-original-link">
-                      📄 Open original document in new tab
-                    </a>
-                    <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                      Browser refused inline rendering — file may be too large.
-                    </div>
-                  </div>
-                </div>
-              </object>
-            ) : (
-              <div className="document-source-fallback">
-                <div className="open-original">
-                  <a href={sourceUrl} target="_blank" rel="noreferrer" className="open-original-link">
-                    📄 Open original document in new tab
-                  </a>
-                  <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-                    Browsers can't render this format inline.
-                  </div>
-                </div>
-                {detail.layoutSnippet ? (
-                  <>
-                    <div className="eyebrow" style={{ marginTop: 16, fontSize: 11 }}>
-                      What we read from this document
-                    </div>
-                    <pre className="layout-snippet">{detail.layoutSnippet}</pre>
-                  </>
-                ) : null}
-              </div>
-            )
-          ) : (
+          {!sourceUrl ? (
             <div className="muted">No source URL.</div>
+          ) : detail.layoutSnippet ? (
+            <>
+              <div className="muted" style={{ fontSize: 12, marginBottom: 10, lineHeight: 1.5 }}>
+                Text extracted from{' '}
+                <strong>{detail.fileName}</strong>
+                {detail.pageCount ? ` (${detail.pageCount} pages)` : ''}.
+                The Intelligence Brief on the right is authored against this content.
+              </div>
+              <pre className="layout-snippet">{detail.layoutSnippet}</pre>
+              {detail.layoutSnippet.endsWith('...') ? (
+                <div className="muted" style={{ fontSize: 11, marginTop: 8, fontStyle: 'italic' }}>
+                  Truncated preview — click "Open {isPdf ? 'PDF' : 'original'}" to view the full document.
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="muted">
+              Text extraction pending or unavailable. Click "Open {isPdf ? 'PDF' : 'original'}" to view the document directly.
+            </div>
           )}
         </Card>
 

@@ -291,6 +291,7 @@ export interface PortfolioDocument {
   documentCandidateId: string;
   fileName: string;
   candidateType: string;
+  family: string;
   extractedSubtype: string | null;
   confidence: number;
   pageCount: number | null;

@@ -23,6 +23,7 @@ type LoadState =
 
 export function PortfolioPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const [familyFilter, setFamilyFilter] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,7 +153,14 @@ export function PortfolioPage() {
 
       <section className="family-grid">
         {portfolio.families.map((family) => (
-          <FamilyCard key={family.family} family={family} />
+          <FamilyCard
+            key={family.family}
+            family={family}
+            isActive={familyFilter === family.family}
+            onClick={() =>
+              setFamilyFilter((cur) => (cur === family.family ? null : family.family))
+            }
+          />
         ))}
       </section>
 
@@ -160,14 +168,37 @@ export function PortfolioPage() {
         <Card title={`Cross-document insights · ${insights.amendmentChains.length} amendment chains`}>
           <InsightsPanel insights={insights} />
         </Card>
-        <Card title="Document-level findings">
+        <Card
+          title={
+            familyFilter
+              ? `${readableFamily(familyFilter)} · ${
+                  portfolio.documents.filter((d) => d.family === familyFilter).length
+                } docs`
+              : `Document-level findings · ${portfolio.documents.length} docs`
+          }
+          actions={
+            familyFilter ? (
+              <button
+                className="px-button px-button-secondary"
+                style={{ fontSize: 12, padding: '4px 10px' }}
+                onClick={() => setFamilyFilter(null)}
+              >
+                Clear filter
+              </button>
+            ) : null
+          }
+        >
           <div className="muted" style={{ marginBottom: 8, fontSize: 13 }}>
-            Click any row to drill into extracted fields.
+            {familyFilter
+              ? `Filtered to ${readableFamily(familyFilter).toLowerCase()}. Click a family card above to switch.`
+              : 'Click any row to drill into extracted fields. Click a family card above to filter.'}
           </div>
           <div className="doc-table">
-            {portfolio.documents.map((d) => (
-              <DocumentRow key={d.documentAssetId} doc={d} />
-            ))}
+            {portfolio.documents
+              .filter((d) => !familyFilter || d.family === familyFilter)
+              .map((d) => (
+                <DocumentRow key={d.documentAssetId} doc={d} />
+              ))}
           </div>
         </Card>
       </section>
@@ -217,26 +248,49 @@ function BatchLlmButton({
   );
 }
 
-function FamilyCard({ family }: { family: PortfolioFamily }) {
+function FamilyCard({
+  family,
+  isActive,
+  onClick,
+}: {
+  family: PortfolioFamily;
+  isActive?: boolean;
+  onClick?: () => void;
+}) {
   return (
-    <Card>
-      <div className="family-card-head">
-        <div>
-          <div className="eyebrow" style={{ fontSize: 11 }}>
-            {readableFamily(family.family)}
+    <button
+      type="button"
+      onClick={onClick}
+      className={`family-card-button ${isActive ? 'is-active' : ''}`}
+      aria-pressed={isActive ? 'true' : 'false'}
+    >
+      <Card className={`family-card-card ${isActive ? 'is-active' : ''}`}>
+        <div className="family-card-head">
+          <div>
+            <div className="eyebrow" style={{ fontSize: 11 }}>
+              {readableFamily(family.family)}
+            </div>
+            <div className="family-card-count">{family.documentCount}</div>
           </div>
-          <div className="family-card-count">{family.documentCount}</div>
+          {family.docIntelPagesUsed > 0 ? (
+            <StatusChip tone="accent">{family.docIntelPagesUsed} OCR'd</StatusChip>
+          ) : (
+            <StatusChip tone="ok">digital</StatusChip>
+          )}
         </div>
-        {family.docIntelPagesUsed > 0 ? (
-          <StatusChip tone="accent">{family.docIntelPagesUsed} OCR'd</StatusChip>
-        ) : (
-          <StatusChip tone="ok">digital</StatusChip>
-        )}
-      </div>
-      <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-        {family.totalPages} pages · {family.totalSizeMb.toFixed(2)} MB
-      </div>
-    </Card>
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          {family.totalPages} pages · {family.totalSizeMb.toFixed(2)} MB
+        </div>
+        {isActive ? (
+          <div
+            className="eyebrow"
+            style={{ fontSize: 10, marginTop: 6, color: 'var(--px-orange, #d4631e)' }}
+          >
+            ▼ FILTER ACTIVE
+          </div>
+        ) : null}
+      </Card>
+    </button>
   );
 }
 
