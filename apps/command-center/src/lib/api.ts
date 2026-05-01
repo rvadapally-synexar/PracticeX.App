@@ -351,6 +351,8 @@ export interface DocumentDetail {
   } | null;
   llmModel: string | null;
   llmExtractedAt: string | null;
+  headline: Record<string, string | number | boolean | null> | null;
+  fieldCitations: Record<string, string> | null;
   narrativeBriefMd: string | null;
   narrativeModel: string | null;
   narrativeExtractedAt: string | null;

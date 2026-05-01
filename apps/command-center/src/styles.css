@@ -885,6 +885,110 @@ select {
   /* fields pane was previously the whole card body — migrate styling here */
 }
 
+/* Slice 18: Canonical Headline grid on document-detail page */
+.headline-section { margin-bottom: 18px; }
+.headline-eyebrow {
+  font-size: 11px;
+  margin-bottom: 10px;
+  color: var(--px-orange, #d4631e);
+  letter-spacing: 0.06em;
+}
+.headline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+.headline-card {
+  border: 1px solid var(--px-line-2, #e5e5e5);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: var(--px-bg-1, #fafafa);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 70px;
+}
+.headline-card.is-null { background: transparent; }
+.headline-card-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--px-text-2, #555);
+}
+.headline-card-value {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--px-text-1, #111);
+  word-break: break-word;
+}
+.headline-card.is-null .headline-card-value { font-weight: 400; font-style: italic; }
+.headline-card-citation {
+  font-size: 10.5px;
+  line-height: 1.4;
+  font-style: italic;
+  cursor: help;
+  border-top: 1px dashed var(--px-line-2, #e5e5e5);
+  padding-top: 4px;
+  margin-top: 2px;
+}
+
+/* Collapsible sections (Structured Details, Risk Flags) */
+.collapsible-section { margin-top: 18px; border-top: 1px solid var(--px-line-2, #e5e5e5); padding-top: 12px; }
+.collapsible-trigger {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font: inherit;
+  color: var(--px-text-1, #111);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 4px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
+.collapsible-trigger:hover { color: var(--px-orange, #d4631e); }
+
+/* Risk badges */
+.risk-count-high { color: var(--px-red, #c0392b); font-weight: 600; }
+.risk-count-med { color: var(--px-orange, #d4631e); }
+.risk-count-low { color: var(--px-text-2, #555); }
+.risk-flags-list { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.risk-flag {
+  border-left: 3px solid var(--px-line-2);
+  padding: 8px 12px;
+  background: var(--px-bg-1, #fafafa);
+  border-radius: 0 6px 6px 0;
+}
+.risk-flag-high { border-left-color: var(--px-red, #c0392b); }
+.risk-flag-med { border-left-color: var(--px-orange, #d4631e); }
+.risk-flag-low { border-left-color: var(--px-text-3, #888); }
+.risk-flag-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.risk-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #fff;
+}
+.risk-badge-high { background: var(--px-red, #c0392b); }
+.risk-badge-med { background: var(--px-orange, #d4631e); }
+.risk-badge-low { background: var(--px-text-3, #888); }
+.risk-flag-cat {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--px-text-2, #555);
+}
+.risk-flag-body { font-size: 13px; line-height: 1.5; }
+.risk-flag-evidence { font-size: 11.5px; line-height: 1.45; margin-top: 4px; font-style: italic; }
+
 /* KPI cards on Command Center are clickable links */
 .kpi-link {
   text-decoration: none;

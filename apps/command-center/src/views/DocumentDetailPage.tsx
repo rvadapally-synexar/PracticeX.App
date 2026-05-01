@@ -251,25 +251,99 @@ function FieldsPane({
   fields: ExtractedField[];
   hasLlm: boolean;
 }) {
+  const [showAllFields, setShowAllFields] = useState(false);
+  const [showRiskFlags, setShowRiskFlags] = useState(false);
+
+  // Pull risk flags out of the secondary fields list — they get their own
+  // collapsible at the bottom and shouldn't dominate the primary view.
+  const riskField = fields.find((f) => f.name === 'risk_flags');
+  const otherFields = fields.filter((f) => f.name !== 'risk_flags');
+  const riskFlags = parseRiskFlags(riskField?.value);
+
+  const headline = detail.headline;
+  const citations = detail.fieldCitations ?? {};
+
   return (
     <div className="fields-pane">
       <div className="eyebrow" style={{ marginBottom: 12, fontSize: 11 }}>
         {hasLlm ? `LLM extracted · ${detail.llmModel ?? ''}` : 'Regex extracted (v1)'}
       </div>
-      {fields.length === 0 ? (
+
+      {headline ? (
+        <HeadlineGrid headline={headline} citations={citations} />
+      ) : fields.length === 0 ? (
         <div className="muted">
           No structured fields extracted.{' '}
           {detail.extractionStatus === 'no_extractor'
             ? "We don't yet have an extractor for this contract type."
             : 'Try processing again or check that the layout extraction succeeded.'}
         </div>
-      ) : (
-        <div className="field-grid">
-          {fields.map((f) => (
-            <FieldRow key={f.name} field={f} />
-          ))}
+      ) : null}
+
+      {otherFields.length > 0 ? (
+        <div className="collapsible-section">
+          <button
+            className="collapsible-trigger"
+            onClick={() => setShowAllFields((v) => !v)}
+            aria-expanded={showAllFields}
+          >
+            <span>{showAllFields ? '▼' : '▶'}</span>
+            <span>Structured details · {otherFields.length} fields</span>
+          </button>
+          {showAllFields ? (
+            <div className="field-grid">
+              {otherFields.map((f) => (
+                <FieldRow key={f.name} field={f} />
+              ))}
+            </div>
+          ) : null}
         </div>
-      )}
+      ) : null}
+
+      {riskFlags.length > 0 ? (
+        <div className="collapsible-section">
+          <button
+            className="collapsible-trigger"
+            onClick={() => setShowRiskFlags((v) => !v)}
+            aria-expanded={showRiskFlags}
+          >
+            <span>{showRiskFlags ? '▼' : '▶'}</span>
+            <span>
+              Risk flags ·{' '}
+              <span className="risk-count-high">
+                {riskFlags.filter((r) => r.severity === 'HIGH').length} HIGH
+              </span>
+              {' · '}
+              <span className="risk-count-med">
+                {riskFlags.filter((r) => r.severity === 'MED').length} MED
+              </span>
+              {' · '}
+              <span className="risk-count-low">
+                {riskFlags.filter((r) => r.severity === 'LOW').length} LOW
+              </span>
+            </span>
+          </button>
+          {showRiskFlags ? (
+            <div className="risk-flags-list">
+              {riskFlags.map((r, i) => (
+                <div key={i} className={`risk-flag risk-flag-${r.severity.toLowerCase()}`}>
+                  <div className="risk-flag-head">
+                    <span className={`risk-badge risk-badge-${r.severity.toLowerCase()}`}>
+                      {r.severity}
+                    </span>
+                    <span className="risk-flag-cat">{r.category}</span>
+                  </div>
+                  <div className="risk-flag-body">{r.flag}</div>
+                  {r.evidence ? (
+                    <div className="risk-flag-evidence muted">{r.evidence}</div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {detail.extractedFields?.reasonCodes && detail.extractedFields.reasonCodes.length > 0 ? (
         <div style={{ marginTop: 16 }}>
           <div className="eyebrow" style={{ fontSize: 11 }}>Reasoning</div>
@@ -282,6 +356,167 @@ function FieldsPane({
       ) : null}
     </div>
   );
+}
+
+interface RiskFlag {
+  severity: 'HIGH' | 'MED' | 'LOW';
+  category: string;
+  flag: string;
+  evidence: string;
+}
+
+function parseRiskFlags(raw: string | null | undefined): RiskFlag[] {
+  if (!raw) return [];
+  try {
+    const arr = JSON.parse(raw);
+    if (!Array.isArray(arr)) return [];
+    return arr
+      .filter((x) => x && typeof x === 'object')
+      .map((x) => ({
+        severity: (x.severity || 'LOW').toUpperCase() as RiskFlag['severity'],
+        category: x.category || '',
+        flag: x.flag || '',
+        evidence: x.evidence || '',
+      }));
+  } catch {
+    return [];
+  }
+}
+
+function HeadlineGrid({
+  headline,
+  citations,
+}: {
+  headline: Record<string, string | number | boolean | null>;
+  citations: Record<string, string>;
+}) {
+  const entries = Object.entries(headline);
+  return (
+    <div className="headline-section">
+      <div className="eyebrow headline-eyebrow">Canonical Headline</div>
+      <div className="headline-grid">
+        {entries.map(([key, value]) => (
+          <HeadlineCard key={key} fieldKey={key} value={value} citation={citations[key]} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HeadlineCard({
+  fieldKey,
+  value,
+  citation,
+}: {
+  fieldKey: string;
+  value: string | number | boolean | null;
+  citation: string | undefined;
+}) {
+  const label = formatLabel(fieldKey);
+  const isNull = value === null || value === undefined || value === '';
+  return (
+    <div className={`headline-card ${isNull ? 'is-null' : ''}`}>
+      <div className="headline-card-label">{label}</div>
+      <div className="headline-card-value">
+        {isNull ? <span className="muted">— not stated</span> : formatValue(fieldKey, value)}
+      </div>
+      {citation ? (
+        <div className="headline-card-citation muted" title={citation}>
+          {citation.length > 90 ? citation.slice(0, 90) + '…' : citation}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function formatLabel(key: string): string {
+  // base_rent_monthly_usd -> "Base Rent (Monthly)"
+  // base_rent_per_rsf_yr_usd -> "Base Rent ($/RSF/yr)"
+  // operating_cost_treatment -> "Operating Cost Treatment"
+  const overrides: Record<string, string> = {
+    base_rent_monthly_usd: 'Base Rent (Monthly)',
+    base_rent_per_rsf_yr_usd: 'Base Rent ($/RSF/yr)',
+    operating_cost_treatment: 'Op-Cost Treatment',
+    total_rentable_sqft: 'Total RSF',
+    annual_escalation_pct: 'Annual Escalation',
+    base_compensation_annual_usd: 'Base Comp (Annual)',
+    without_cause_notice_days: 'Without-Cause Notice',
+    non_compete_radius_miles: 'Non-Compete Radius',
+    non_compete_duration_months: 'Non-Compete Duration',
+    confidentiality_survival_months: 'Confidentiality Survival',
+    discussion_term_months: 'Discussion Term',
+    initial_term_months: 'Initial Term',
+    response_time_phone_minutes: 'Phone Response',
+    coverage_schedule_summary: 'Coverage Schedule',
+    permitted_purpose_quote: 'Permitted Purpose',
+    annual_money_flow_usd: 'Annual Money Flow',
+    payment_direction: 'Payment Direction',
+    subject_matter_summary: 'Subject Matter',
+    liability_cap_usd: 'Liability Cap',
+    is_baa: 'Is BAA',
+    fmv_certified: 'FMV Certified',
+    tail_insurance_paid_by: 'Tail Insurance Paid By',
+    productivity_model: 'Productivity Model',
+    malpractice_provided_by: 'Malpractice Provider',
+    counterparty_name: 'Counterparty',
+    counterparty_class: 'Counterparty Class',
+    has_standstill: 'Standstill Clause',
+    has_non_solicitation: 'Non-Solicitation',
+    is_mutual: 'Mutual',
+    trade_secret_perpetual: 'Trade Secret Perpetual',
+    acquirer_signal: 'Acquirer Signal',
+    stipend_amount_usd: 'Stipend Amount',
+    stipend_basis: 'Stipend Basis',
+    is_signed: 'Signed?',
+    physician_name: 'Physician',
+    employer: 'Employer',
+    fte: 'FTE',
+    position_title: 'Position',
+    document_type: 'Document Type',
+    coverage_specialty: 'Specialty',
+    covering_group: 'Covering Group',
+    covered_facility: 'Covered Facility',
+  };
+  if (overrides[key]) return overrides[key];
+  return key
+    .split('_')
+    .map((p) => p.charAt(0).toUpperCase() + p.slice(1))
+    .join(' ');
+}
+
+function formatValue(key: string, value: string | number | boolean): string {
+  if (typeof value === 'boolean') return value ? 'Yes' : 'No';
+  if (key.endsWith('_usd')) {
+    if (typeof value === 'number') {
+      const formatted = value.toLocaleString('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        maximumFractionDigits: 2,
+      });
+      if (key.includes('monthly')) return `${formatted}/mo`;
+      if (key.includes('annual') || key.includes('yr')) return `${formatted}/yr`;
+      return formatted;
+    }
+  }
+  if (key.endsWith('_pct') && typeof value === 'number') return `${value}%`;
+  if (key.endsWith('_sqft') && typeof value === 'number') return `${value.toLocaleString('en-US')} RSF`;
+  if (key.endsWith('_months') && typeof value === 'number') {
+    const years = value / 12;
+    return Number.isInteger(years) ? `${value} months (${years} yr)` : `${value} months`;
+  }
+  if (key.endsWith('_days') && typeof value === 'number') return `${value} days`;
+  if (key.endsWith('_miles') && typeof value === 'number') return `${value} miles`;
+  if (key.endsWith('_minutes') && typeof value === 'number') return `${value} min`;
+  if (key.endsWith('_date') && typeof value === 'string') {
+    const d = new Date(value);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    }
+  }
+  if (key === 'operating_cost_treatment' && typeof value === 'string') {
+    return value.toUpperCase().replace(/_/g, ' ');
+  }
+  return String(value);
 }
 
 function LlmActionRow({

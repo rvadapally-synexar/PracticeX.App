@@ -316,7 +316,11 @@ public static class AnalysisEndpoints
         }
 
         // Surface LLM-extracted fields when present (Slice 13).
+        // Slice 18: also surface `headline` and `field_citations` separately
+        // so the UI can render the canonical-fields view first.
         ExtractedFieldsView? llmExtractedFields = null;
+        Dictionary<string, object?>? headline = null;
+        Dictionary<string, string>? fieldCitations = null;
         if (!string.IsNullOrEmpty(asset.LlmExtractedFieldsJson))
         {
             try
@@ -325,10 +329,43 @@ public static class AnalysisEndpoints
                 var fields = new List<ExtractedFieldView>();
                 foreach (var prop in doc.RootElement.EnumerateObject())
                 {
+                    // Skip the headline + field_citations from the flat field
+                    // list — the UI renders them via the dedicated headline grid.
+                    if (prop.Name is "headline" or "field_citations") continue;
                     var rawValue = prop.Value.ValueKind == JsonValueKind.Null ? null : prop.Value.ToString();
                     fields.Add(new ExtractedFieldView(prop.Name, rawValue, 0.95m, null));
                 }
                 llmExtractedFields = new ExtractedFieldsView(fields, ["llm_extracted"]);
+
+                if (doc.RootElement.TryGetProperty("headline", out var hl) &&
+                    hl.ValueKind == JsonValueKind.Object)
+                {
+                    headline = new Dictionary<string, object?>();
+                    foreach (var prop in hl.EnumerateObject())
+                    {
+                        headline[prop.Name] = prop.Value.ValueKind switch
+                        {
+                            JsonValueKind.Null => null,
+                            JsonValueKind.String => prop.Value.GetString(),
+                            JsonValueKind.Number => prop.Value.TryGetInt64(out var i) ? (object)i : prop.Value.GetDouble(),
+                            JsonValueKind.True => true,
+                            JsonValueKind.False => false,
+                            _ => prop.Value.ToString()
+                        };
+                    }
+                }
+                if (doc.RootElement.TryGetProperty("field_citations", out var fc) &&
+                    fc.ValueKind == JsonValueKind.Object)
+                {
+                    fieldCitations = new Dictionary<string, string>();
+                    foreach (var prop in fc.EnumerateObject())
+                    {
+                        if (prop.Value.ValueKind == JsonValueKind.String)
+                        {
+                            fieldCitations[prop.Name] = prop.Value.GetString() ?? "";
+                        }
+                    }
+                }
             }
             catch { /* leave null */ }
         }
@@ -378,6 +415,8 @@ public static class AnalysisEndpoints
             LlmExtractedFields: llmExtractedFields,
             LlmModel: asset.LlmExtractorModel,
             LlmExtractedAt: asset.LlmExtractedAt,
+            Headline: headline,
+            FieldCitations: fieldCitations,
             NarrativeBriefMd: asset.LlmNarrativeMd,
             NarrativeModel: asset.LlmNarrativeModel,
             NarrativeExtractedAt: asset.LlmNarrativeExtractedAt,
@@ -819,6 +858,8 @@ public sealed record DocumentDetailResponse(
     ExtractedFieldsView? LlmExtractedFields,
     string? LlmModel,
     DateTimeOffset? LlmExtractedAt,
+    IReadOnlyDictionary<string, object?>? Headline,
+    IReadOnlyDictionary<string, string>? FieldCitations,
     string? NarrativeBriefMd,
     string? NarrativeModel,
     DateTimeOffset? NarrativeExtractedAt,
