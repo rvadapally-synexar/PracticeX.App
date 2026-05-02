@@ -112,6 +112,8 @@ app.MapAnalysisEndpoints();
 app.MapLlmExtractionEndpoints();
 app.MapOcrReprocessEndpoints();
 app.MapPortfolioBriefEndpoints();
+app.MapRenewalsEndpoints();
+app.MapEntityGraphEndpoints();
 
 // Demo seed: creates the default tenant + user the demo current-user resolver
 // expects. In production this is replaced by tenant onboarding flows.

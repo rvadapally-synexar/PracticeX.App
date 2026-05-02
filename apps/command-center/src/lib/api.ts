@@ -432,6 +432,63 @@ export interface PortfolioBrief {
   generatedAt: string;
 }
 
+// Slice 19 — Renewal Engine
+export interface RenewalAction {
+  documentAssetId: string;
+  fileName: string;
+  family: string;
+  counterparty: string | null;
+  actionType: string;
+  description: string;
+  actionDate: string; // yyyy-MM-dd
+  daysFromToday: number;
+  severity: 'overdue' | 'high' | 'medium' | 'low' | 'info';
+}
+
+export interface RenewalBucket {
+  key: string;
+  label: string;
+  items: RenewalAction[];
+}
+
+export interface RenewalCounts {
+  overdue: number;
+  within30: number;
+  within90: number;
+  within180: number;
+  total: number;
+}
+
+export interface RenewalsResponse {
+  generatedAt: string;
+  today: string;
+  counts: RenewalCounts;
+  buckets: RenewalBucket[];
+  actions: RenewalAction[];
+}
+
+// Slice 17 — Entity Graph
+export interface EntityGraphNode {
+  id: string;
+  label: string;
+  type: 'person' | 'organization' | 'asset' | 'document';
+  family?: string | null;
+  documentAssetId?: string | null;
+  size: number;
+}
+
+export interface EntityGraphLink {
+  source: string;
+  target: string;
+  relation: string;
+  documentAssetId?: string | null;
+}
+
+export interface EntityGraph {
+  nodes: EntityGraphNode[];
+  links: EntityGraphLink[];
+}
+
 export const analysisApi = {
   getPortfolio: () => request<Portfolio>('/analysis/portfolio'),
   getInsights: () => request<PortfolioInsights>('/analysis/insights'),
@@ -451,6 +508,8 @@ export const analysisApi = {
     request<PortfolioBrief>(`/analysis/portfolio-brief?_t=${Date.now()}`),
   generatePortfolioBrief: () =>
     request<PortfolioBrief>('/analysis/portfolio-brief', { method: 'POST' }),
+  getRenewals: () => request<RenewalsResponse>(`/analysis/renewals?_t=${Date.now()}`),
+  getEntityGraph: () => request<EntityGraph>(`/analysis/entity-graph?_t=${Date.now()}`),
 };
 
 export interface BatchExtractionResult {

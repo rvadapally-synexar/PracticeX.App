@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactElement } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactElement } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Button, Card, ConfidenceBar, StatusChip } from '@practicex/design-system';
 import ReactMarkdown from 'react-markdown';
@@ -23,6 +23,23 @@ export function DocumentDetailPage() {
   const { assetId } = useParams<{ assetId: string }>();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [tab, setTab] = useState<RightPaneTab>('brief');
+  const [activeCitation, setActiveCitation] = useState<string | null>(null);
+  const [flashKey, setFlashKey] = useState(0);
+  const snippetRef = useRef<HTMLPreElement>(null);
+
+  function focusCitation(citation: string) {
+    setActiveCitation(citation);
+    setFlashKey((k) => k + 1);
+    // Defer to allow render cycle to mark the highlight target.
+    setTimeout(() => {
+      const target = snippetRef.current?.querySelector('[data-citation-anchor="true"]') as HTMLElement | null;
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } else if (snippetRef.current) {
+        snippetRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    }, 30);
+  }
 
   useEffect(() => {
     if (!assetId) return;
@@ -134,12 +151,23 @@ export function DocumentDetailPage() {
                 Text extracted from{' '}
                 <strong>{detail.fileName}</strong>
                 {detail.pageCount ? ` (${detail.pageCount} pages)` : ''}.
-                The Intelligence Brief on the right is authored against this content.
+                {activeCitation ? (
+                  <span style={{ color: 'var(--px-orange, #d4631e)' }}>
+                    {' '}Highlighted: passage tied to the canonical-headline field you clicked.
+                  </span>
+                ) : (
+                  ' Click any canonical-headline card on the right to highlight its source passage here.'
+                )}
               </div>
-              <pre className="layout-snippet">{detail.layoutSnippet}</pre>
+              <LayoutSnippetPane
+                snippetRef={snippetRef}
+                snippet={detail.layoutSnippet}
+                citation={activeCitation}
+                flashKey={flashKey}
+              />
               {detail.layoutSnippet.endsWith('...') ? (
                 <div className="muted" style={{ fontSize: 11, marginTop: 8, fontStyle: 'italic' }}>
-                  Truncated preview — click "Open {isPdf ? 'PDF' : 'original'}" to view the full document.
+                  Truncated preview - click "Open {isPdf ? 'PDF' : 'original'}" to view the full document.
                 </div>
               ) : null}
             </>
@@ -164,7 +192,13 @@ export function DocumentDetailPage() {
             {tab === 'brief' ? (
               <BriefPane detail={detail} />
             ) : (
-              <FieldsPane detail={detail} fields={fields} hasLlm={hasLlm} />
+              <FieldsPane
+                detail={detail}
+                fields={fields}
+                hasLlm={hasLlm}
+                onCitationClick={focusCitation}
+                activeCitation={activeCitation}
+              />
             )}
           </div>
         </Card>
@@ -246,10 +280,14 @@ function FieldsPane({
   detail,
   fields,
   hasLlm,
+  onCitationClick,
+  activeCitation,
 }: {
   detail: DocumentDetail;
   fields: ExtractedField[];
   hasLlm: boolean;
+  onCitationClick?: (citation: string) => void;
+  activeCitation?: string | null;
 }) {
   const [showAllFields, setShowAllFields] = useState(false);
   const [showRiskFlags, setShowRiskFlags] = useState(false);
@@ -270,7 +308,12 @@ function FieldsPane({
       </div>
 
       {headline ? (
-        <HeadlineGrid headline={headline} citations={citations} />
+        <HeadlineGrid
+          headline={headline}
+          citations={citations}
+          onCitationClick={onCitationClick}
+          activeCitation={activeCitation}
+        />
       ) : fields.length === 0 ? (
         <div className="muted">
           No structured fields extracted.{' '}
@@ -386,18 +429,32 @@ function parseRiskFlags(raw: string | null | undefined): RiskFlag[] {
 function HeadlineGrid({
   headline,
   citations,
+  onCitationClick,
+  activeCitation,
 }: {
   headline: Record<string, string | number | boolean | null>;
   citations: Record<string, string>;
+  onCitationClick?: (citation: string) => void;
+  activeCitation?: string | null;
 }) {
   const entries = Object.entries(headline);
   return (
     <div className="headline-section">
       <div className="eyebrow headline-eyebrow">Canonical Headline</div>
       <div className="headline-grid">
-        {entries.map(([key, value]) => (
-          <HeadlineCard key={key} fieldKey={key} value={value} citation={citations[key]} />
-        ))}
+        {entries.map(([key, value]) => {
+          const citation = citations[key];
+          return (
+            <HeadlineCard
+              key={key}
+              fieldKey={key}
+              value={value}
+              citation={citation}
+              isActive={!!citation && citation === activeCitation}
+              onClick={citation && onCitationClick ? () => onCitationClick(citation) : undefined}
+            />
+          );
+        })}
       </div>
     </div>
   );
@@ -407,26 +464,159 @@ function HeadlineCard({
   fieldKey,
   value,
   citation,
+  isActive,
+  onClick,
 }: {
   fieldKey: string;
   value: string | number | boolean | null;
   citation: string | undefined;
+  isActive?: boolean;
+  onClick?: () => void;
 }) {
   const label = formatLabel(fieldKey);
   const isNull = value === null || value === undefined || value === '';
+  const clickable = !!onClick && !!citation;
+  const className = [
+    'headline-card',
+    isNull ? 'is-null' : '',
+    clickable ? 'is-clickable' : '',
+    isActive ? 'is-active' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+  const handleClick = () => {
+    if (onClick) onClick();
+  };
+  const Wrapper: any = clickable ? 'button' : 'div';
+  const wrapperProps = clickable
+    ? {
+        type: 'button',
+        onClick: handleClick,
+        title: 'Click to highlight the source passage on the left',
+      }
+    : {};
   return (
-    <div className={`headline-card ${isNull ? 'is-null' : ''}`}>
+    <Wrapper className={className} {...wrapperProps}>
       <div className="headline-card-label">{label}</div>
       <div className="headline-card-value">
-        {isNull ? <span className="muted">— not stated</span> : formatValue(fieldKey, value)}
+        {isNull ? <span className="muted">- not stated</span> : formatValue(fieldKey, value)}
       </div>
       {citation ? (
         <div className="headline-card-citation muted" title={citation}>
-          {citation.length > 90 ? citation.slice(0, 90) + '…' : citation}
+          {citation.length > 90 ? citation.slice(0, 90) + '...' : citation}
         </div>
       ) : null}
-    </div>
+    </Wrapper>
   );
+}
+
+function LayoutSnippetPane({
+  snippetRef,
+  snippet,
+  citation,
+  flashKey,
+}: {
+  snippetRef: React.RefObject<HTMLPreElement | null>;
+  snippet: string;
+  citation: string | null;
+  flashKey: number;
+}) {
+  // Try to locate the citation inside the snippet. Citations from the LLM
+  // are typically short quotes (15-150 chars). Match case-insensitively and
+  // normalize whitespace, but render the original snippet substring so the
+  // user sees the document's actual punctuation/spacing.
+  const match = useMemo(() => findCitation(snippet, citation), [snippet, citation]);
+
+  if (!match) {
+    return (
+      <pre ref={snippetRef} className="layout-snippet">
+        {snippet}
+      </pre>
+    );
+  }
+
+  const before = snippet.slice(0, match.start);
+  const matched = snippet.slice(match.start, match.end);
+  const after = snippet.slice(match.end);
+  return (
+    <pre ref={snippetRef} className="layout-snippet">
+      {before}
+      <mark
+        key={flashKey /* re-trigger flash animation on each click */}
+        data-citation-anchor="true"
+        className="citation-mark"
+      >
+        {matched}
+      </mark>
+      {after}
+    </pre>
+  );
+}
+
+/**
+ * Locate a citation quote inside the layout snippet. The LLM tends to emit
+ * a near-verbatim quote with possible whitespace/quote-style differences;
+ * this function normalizes both sides to a token sequence and uses indexOf
+ * on that, then walks back to the original character offsets.
+ */
+function findCitation(snippet: string, citation: string | null): { start: number; end: number } | null {
+  if (!citation) return null;
+  const trimmed = citation.replace(/^[\s"'‘’“”]+|[\s"'‘’“”]+$/g, '');
+  if (trimmed.length < 6) return null;
+
+  // Direct case-insensitive match first (cheapest path).
+  const lowerSnippet = snippet.toLowerCase();
+  const lowerNeedle = trimmed.toLowerCase();
+  let idx = lowerSnippet.indexOf(lowerNeedle);
+  if (idx !== -1) {
+    return { start: idx, end: idx + trimmed.length };
+  }
+
+  // Try a shortened head (first 40 chars) — the LLM sometimes paraphrases the
+  // tail of long quotes.
+  if (trimmed.length > 40) {
+    const head = lowerNeedle.slice(0, 40);
+    idx = lowerSnippet.indexOf(head);
+    if (idx !== -1) {
+      return { start: idx, end: idx + 40 };
+    }
+  }
+
+  // Last resort: walk on collapsed whitespace.
+  const norm = (s: string) => s.replace(/\s+/g, ' ').toLowerCase();
+  const normSnippet = norm(snippet);
+  const normNeedle = norm(trimmed);
+  const normIdx = normSnippet.indexOf(normNeedle);
+  if (normIdx === -1) return null;
+  // Map back: count chars in original snippet until we hit normIdx in the
+  // normalized version. Simplistic but workable for short docs.
+  let origPos = 0;
+  let normPos = 0;
+  while (normPos < normIdx && origPos < snippet.length) {
+    const orig = snippet[origPos];
+    if (/\s/.test(orig)) {
+      // collapsed runs of ws are 1 char in normalized
+      while (origPos < snippet.length && /\s/.test(snippet[origPos])) origPos++;
+      normPos++;
+    } else {
+      origPos++;
+      normPos++;
+    }
+  }
+  // Walk needle length in original.
+  let endPos = origPos;
+  let used = 0;
+  while (used < normNeedle.length && endPos < snippet.length) {
+    const ch = snippet[endPos];
+    if (/\s/.test(ch)) {
+      while (endPos < snippet.length && /\s/.test(snippet[endPos])) endPos++;
+      used++;
+    } else {
+      endPos++;
+      used++;
+    }
+  }
+  return { start: origPos, end: endPos };
 }
 
 function formatLabel(key: string): string {

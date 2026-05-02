@@ -1061,4 +1061,193 @@ a.doc-row:hover { background: var(--px-bg-1, #fafafa); }
   margin: 18px 0;
 }
 
+/* ============================================================================
+   Slice 19 — Renewals page
+   ============================================================================ */
+
+.renewal-chip {
+  background: var(--px-surface);
+  border: 1px solid var(--px-line);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--px-ink-2);
+}
+.renewal-chip:hover { background: var(--px-bg-1, #f5f5f5); }
+.renewal-chip.is-active {
+  background: var(--px-orange, #d4631e);
+  color: #fff;
+  border-color: var(--px-orange, #d4631e);
+}
+
+.renewals-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.renewal-bucket {
+  border: 1px solid var(--px-line-2, #e5e5e5);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.renewal-bucket-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 16px;
+  background: var(--px-bg-1, #fafafa);
+  border-bottom: 1px solid var(--px-line-2, #e5e5e5);
+}
+
+.renewal-bucket-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--px-text-2, #555);
+}
+
+.renewal-bucket-count {
+  font-family: var(--px-mono, ui-monospace, monospace);
+  font-size: 11px;
+  background: var(--px-surface);
+  border: 1px solid var(--px-line);
+  border-radius: 4px;
+  padding: 2px 8px;
+}
+
+.renewal-bucket-overdue .renewal-bucket-head {
+  background: #fff1f0;
+  border-bottom-color: #ffccc7;
+}
+.renewal-bucket-overdue .renewal-bucket-label { color: #cf1322; }
+
+.renewal-bucket-d0_30 .renewal-bucket-head {
+  background: #fff7e6;
+  border-bottom-color: #ffd591;
+}
+.renewal-bucket-d0_30 .renewal-bucket-label { color: #d46b08; }
+
+.renewal-bucket-d31_90 .renewal-bucket-head { background: #fffbe6; border-bottom-color: #ffe58f; }
+.renewal-bucket-d31_90 .renewal-bucket-label { color: #ad6800; }
+
+.renewal-action-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.renewal-action {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 80px;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 16px;
+  border-top: 1px solid var(--px-line-2, #f0f0f0);
+  text-decoration: none;
+  color: inherit;
+  transition: background 120ms ease;
+}
+.renewal-action:first-child { border-top: none; }
+.renewal-action:hover { background: var(--px-bg-1, #fafafa); }
+
+.renewal-action-date-main {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--px-text-1, #111);
+}
+
+.renewal-action-date-rel {
+  font-size: 11.5px;
+  color: var(--px-text-3, #888);
+  font-family: var(--px-mono, ui-monospace, monospace);
+  margin-top: 2px;
+}
+
+.renewal-action-overdue .renewal-action-date-main,
+.renewal-action-overdue .renewal-action-date-rel { color: #cf1322; }
+.renewal-action-high .renewal-action-date-main,
+.renewal-action-high .renewal-action-date-rel { color: #d46b08; }
+
+.renewal-action-type {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--px-text-1, #111);
+}
+
+.renewal-action-desc {
+  font-size: 12.5px;
+  color: var(--px-text-2, #555);
+  line-height: 1.45;
+  margin-top: 2px;
+}
+
+.renewal-action-meta {
+  font-size: 11.5px;
+  margin-top: 4px;
+}
+
+.renewal-action-badge {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  border-radius: 4px;
+  color: #fff;
+  text-align: center;
+  justify-self: end;
+}
+
+.renewal-badge-overdue { background: #cf1322; }
+.renewal-badge-high { background: #d46b08; }
+.renewal-badge-medium { background: #ad6800; }
+.renewal-badge-low { background: #1d6f42; }
+.renewal-badge-info { background: #6b6b6b; }
+
+/* ============================================================================
+   Slice 19 polish - clickable headline cards + citation flash highlight
+   ============================================================================ */
+
+.headline-card.is-clickable {
+  cursor: pointer;
+  border-color: var(--px-line, #d4d4d4);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: transform 100ms ease, border-color 120ms ease, box-shadow 120ms ease;
+}
+.headline-card.is-clickable:hover {
+  border-color: var(--px-orange, #d4631e);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(212, 99, 30, 0.08);
+}
+.headline-card.is-clickable:focus {
+  outline: 2px solid var(--px-orange, #d4631e);
+  outline-offset: 2px;
+}
+.headline-card.is-active {
+  border-color: var(--px-orange, #d4631e);
+  background: linear-gradient(180deg, rgba(212, 99, 30, 0.08) 0%, rgba(212, 99, 30, 0.02) 100%);
+}
+
+/* Highlighted span inside the layout snippet */
+.citation-mark {
+  background: rgba(255, 232, 138, 0.85);
+  color: inherit;
+  border-radius: 3px;
+  padding: 1px 2px;
+  box-shadow: 0 0 0 0 rgba(212, 99, 30, 0.7);
+  animation: citation-flash 1.6s ease-out;
+}
+
+@keyframes citation-flash {
+  0%   { background: rgba(255, 138, 0, 0.85); box-shadow: 0 0 0 4px rgba(212, 99, 30, 0.45); }
+  60%  { background: rgba(255, 232, 138, 0.85); box-shadow: 0 0 0 0 rgba(212, 99, 30, 0); }
+  100% { background: rgba(255, 232, 138, 0.85); box-shadow: 0 0 0 0 rgba(212, 99, 30, 0); }
+}
+
 

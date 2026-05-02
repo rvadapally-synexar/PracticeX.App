@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, KpiCard } from '@practicex/design-system';
-import { analysisApi, type DashboardStats, type Portfolio } from '../lib/api';
+import { analysisApi, type DashboardStats, type Portfolio, type RenewalsResponse } from '../lib/api';
 
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'error'; message: string }
-  | { kind: 'ready'; stats: DashboardStats; portfolio: Portfolio };
+  | { kind: 'ready'; stats: DashboardStats; portfolio: Portfolio; renewals: RenewalsResponse | null };
 
 export function CommandCenterPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
@@ -15,11 +15,12 @@ export function CommandCenterPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [stats, portfolio] = await Promise.all([
+        const [stats, portfolio, renewals] = await Promise.all([
           analysisApi.getDashboard(),
           analysisApi.getPortfolio(),
+          analysisApi.getRenewals().catch(() => null),
         ]);
-        if (!cancelled) setState({ kind: 'ready', stats, portfolio });
+        if (!cancelled) setState({ kind: 'ready', stats, portfolio, renewals });
       } catch (err) {
         if (cancelled) return;
         setState({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to load.' });
@@ -37,7 +38,18 @@ export function CommandCenterPage() {
     return <div className="page"><div className="banner banner-error">{state.message}</div></div>;
   }
 
-  const { stats, portfolio } = state;
+  const { stats, portfolio, renewals } = state;
+  const overdueCount = renewals?.counts.overdue ?? 0;
+  const next30 = renewals?.counts.within30 ?? 0;
+  const renewalsHelper = renewals
+    ? overdueCount > 0
+      ? `${overdueCount} overdue · ${next30} in next 30 days`
+      : next30 > 0
+      ? `${next30} action${next30 === 1 ? '' : 's'} in next 30 days`
+      : `${renewals.counts.total} total upcoming actions`
+    : 'Loading…';
+  const renewalsTone: 'warn' | 'accent' | undefined =
+    overdueCount > 0 ? 'warn' : next30 > 0 ? 'accent' : undefined;
   const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 
   return (
@@ -85,11 +97,12 @@ export function CommandCenterPage() {
             tone={stats.reviewQueueDepth > 0 ? 'warn' : undefined}
           />
         </Link>
-        <Link to="/portfolio" className="kpi-link" aria-label="Open OCR'd documents">
+        <Link to="/renewals" className="kpi-link" aria-label="Open renewals timeline">
           <KpiCard
-            label="Doc Intelligence pages"
-            value={stats.docIntelPagesProcessed.toString()}
-            helper={`Azure cost · $${stats.estimatedDocIntelCostUsd.toFixed(2)}`}
+            label="Upcoming actions"
+            value={renewals ? (overdueCount + next30).toString() : '—'}
+            helper={renewalsHelper}
+            tone={renewalsTone}
           />
         </Link>
       </section>
