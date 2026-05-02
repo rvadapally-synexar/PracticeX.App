@@ -1,15 +1,16 @@
 # PracticeX Command Center — Roadmap & Workflow
 
 Single-source-of-truth document for "where are we, what's next, why does it matter."
-Last updated: 2026-04-29 (commit `5e739b4`).
+Last updated: 2026-05-02 (commit `dc8e638`).
 
 ---
 
 ## Where we are today
 
 Live demo URL: `https://app.practicex.ai/portfolio` (gated by Cloudflare Access — whitelist email entry).
+Other surfaces: `/dashboard` (command center), `/renewals`, `/graph` (entity network), `/portfolio/{id}` (doc detail with citation anchors).
 
-15 slices shipped end-to-end. Eagle GI's 18-document drop is the working test set. Everything below is **demo-ready as of tonight** — pending the polish list at the bottom.
+19 slices shipped end-to-end. Eagle GI's 18-document drop is the working test set. Everything below is **demo-ready** — pending the polish list at the bottom.
 
 ### What's actually working
 
@@ -19,8 +20,12 @@ Live demo URL: `https://app.practicex.ai/portfolio` (gated by Cloudflare Access 
 - **Regex field extractors v1** — Lease, NDA, Employment, Corporate, CallCoverage. Each with a typed schema (`lease_v1`, `nda_v1`, etc).
 - **LLM field extraction (Sonnet 4.6 via OpenRouter)** — replaces regex on demand or in batch. ~$0.01-0.02 per doc, 5-10 sec each.
 - **Cross-document insights** — amendment chains, counterparty graph, address registry, total rentable sqft. Reads LLM data preferentially, falls back to regex.
-- **Premium UI surface** — Portfolio (KPIs + family rollups + insights panel), Document Detail (inline PDF + extracted fields), Review queue, Command Center.
-- **Cloudflare deploy** — Pages (frontend) + Tunnel (backend on local PC) + Access (whitelist auth) + same-origin Pages Function proxy.
+- **Premium UI surface** — Portfolio (KPIs + family rollups + insights panel), Document Detail (layout snippet + canonical headline + citation anchors), Review queue, Command Center.
+- **Canonical headline fields (Slice 18)** — every contract family has a defined must-extract set (lease/NDA/employment/call-coverage/generic). Stage-1+2 prompts mandate the schema; UI renders a HeadlineGrid first, "structured details" + "risk flags" collapse below.
+- **Renewal Engine (Slice 19)** — `/api/analysis/renewals` derives expiration, notice deadline, NDA discussion / survival end from headlines; `/renewals` page buckets by Overdue / 0-30 / 31-90 / 91-180 / 181-365 / >365 with severity coloring; KPI on Command Center.
+- **Citation anchors (polish)** — clicking a HeadlineCard scrolls the layout-snippet pane to the matched quote and flashes a highlight on it; falls back to head-match and whitespace-normalized search.
+- **Entity Graph (Slice 17)** — `/api/analysis/entity-graph` walks every doc and produces nodes (people / orgs / premises / documents) + relation edges with token-normalized dedupe (M.D./Ph.D./P.A. degree-suffix collapse). `/graph` page renders force-atlas-2 via vis-network with type-color legend, hover tooltips, sidebar inspector for selected node, double-click drill into doc.
+- **Cloudflare deploy** — Pages (frontend) + Tunnel (backend on local PC) + Access (whitelist auth) + same-origin Pages Function proxy + service-token gate on `api.practicex.ai`.
 
 ### Compliance posture
 
