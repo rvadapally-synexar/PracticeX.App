@@ -45,7 +45,7 @@
         <Label Grid.Column="0" Content="Connection:" VerticalAlignment="Center" />
         <ComboBox Grid.Column="1" x:Name="ConnectionCombo" />
         <Label Grid.Column="2" Content="API base:" VerticalAlignment="Center" Margin="16,0,0,0" />
-        <TextBox Grid.Column="3" x:Name="ApiBox" Text="https://localhost:7138" />
+        <TextBox Grid.Column="3" x:Name="ApiBox" Text="https://localhost:7100" />
         <Button Grid.Column="4" x:Name="RefreshConnectionsBtn" Content="Refresh" Style="{StaticResource SecondaryButton}" Margin="12,0,0,0" Click="OnRefreshConnections" />
       </Grid>
 
