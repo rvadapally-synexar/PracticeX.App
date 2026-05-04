@@ -73,10 +73,12 @@ public static class DependencyInjection
         }));
         services.AddSingleton<PdfTextExtractor>();
         services.AddSingleton<DocxTextExtractor>();
+        services.AddSingleton<XlsxTextExtractor>();
         services.AddSingleton<IDocumentTextExtractor>(sp => new CompositeDocumentTextExtractor(new IDocumentTextExtractor[]
         {
             sp.GetRequiredService<PdfTextExtractor>(),
-            sp.GetRequiredService<DocxTextExtractor>()
+            sp.GetRequiredService<DocxTextExtractor>(),
+            sp.GetRequiredService<XlsxTextExtractor>()
         }));
         services.AddSingleton<IContractFieldExtractor, EmploymentExtractor>();
         services.AddSingleton<IContractFieldExtractor, NdaExtractor>();

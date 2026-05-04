@@ -309,6 +309,7 @@ export interface PortfolioDocument {
   isExecuted: boolean | null;
   expirationDate: string | null;
   expirationStatus: ExpirationStatus;
+  facilityId: string | null;
   createdAt: string;
 }
 
@@ -429,6 +430,7 @@ export interface Facility {
   code: string;
   name: string;
   status: string;
+  documentCount: number;
 }
 
 export interface PortfolioBrief {
@@ -499,7 +501,8 @@ export interface EntityGraph {
 }
 
 export const analysisApi = {
-  getPortfolio: () => request<Portfolio>('/analysis/portfolio'),
+  getPortfolio: (facilityId?: string) =>
+    request<Portfolio>(`/analysis/portfolio${facilityId ? `?facilityId=${encodeURIComponent(facilityId)}` : ''}`),
   getInsights: () => request<PortfolioInsights>('/analysis/insights'),
   getDocument: (assetId: string) => request<DocumentDetail>(`/analysis/documents/${assetId}`),
   getDashboard: () => request<DashboardStats>('/analysis/dashboard'),

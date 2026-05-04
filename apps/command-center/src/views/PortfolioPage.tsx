@@ -25,6 +25,7 @@ export function PortfolioPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [searchParams, setSearchParams] = useSearchParams();
   const familyFilter = searchParams.get('family');
+  const facilityFilter = searchParams.get('facility');
   const setFamilyFilter = (next: string | null) => {
     setSearchParams(
       (prev) => {
@@ -42,7 +43,7 @@ export function PortfolioPage() {
     (async () => {
       try {
         const [portfolio, insights] = await Promise.all([
-          analysisApi.getPortfolio(),
+          analysisApi.getPortfolio(facilityFilter ?? undefined),
           analysisApi.getInsights(),
         ]);
         if (cancelled) return;
@@ -60,7 +61,7 @@ export function PortfolioPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [facilityFilter]);
 
   if (state.kind === 'loading') {
     return (
@@ -125,7 +126,7 @@ export function PortfolioPage() {
           totalDocs={portfolio.totalDocuments}
           onCompleted={async () => {
             const [p, i] = await Promise.all([
-              analysisApi.getPortfolio(),
+              analysisApi.getPortfolio(facilityFilter ?? undefined),
               analysisApi.getInsights(),
             ]);
             setState({ kind: 'ready', portfolio: p, insights: i });

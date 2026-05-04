@@ -14,7 +14,7 @@ import {
   Upload,
   Zap,
 } from 'lucide-react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useSearchParams } from 'react-router-dom';
 import { analysisApi, type CurrentUser, type DashboardStats, type Facility } from '../lib/api';
 
 type WorkspaceItem = {
@@ -48,6 +48,9 @@ export function AppShell() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const activeFacility = searchParams.get('facility');
 
   useEffect(() => {
     let cancelled = false;
@@ -94,10 +97,25 @@ export function AppShell() {
           <BrandMark />
           <span className="brand-name">PracticeX Command Center</span>
         </div>
-        <button className="facility-switch" type="button">
+        <button
+          className="facility-switch"
+          type="button"
+          onClick={() => navigate('/portfolio')}
+          title={activeFacility ? 'Click to clear facility filter' : 'All facilities'}
+        >
           <Building2 size={13} />
           <span className="mono-label">Facility</span>
-          <strong>{facilities.length === 0 ? 'All facilities' : `${facilities.length} facilities`}</strong>
+          <strong>
+            {(() => {
+              if (activeFacility) {
+                const f = facilities.find((x) => x.id === activeFacility);
+                return f ? f.name : 'Filtered';
+              }
+              if (facilities.length === 0) return 'All facilities';
+              if (facilities.length === 1) return facilities[0].name;
+              return `${facilities.length} facilities`;
+            })()}
+          </strong>
         </button>
         <div className="topbar-spacer" />
         <div className="cmdk" role="search">
@@ -130,16 +148,31 @@ export function AppShell() {
           <section className="nav-section">
             <h2 className="section-label">Facilities</h2>
             <div className="facility-list">
-              {facilities.map((facility) => (
-                <button className="facility-pill" key={facility.id} type="button">
-                  <span className="facility-code">{facility.code}</span>
-                  <span>{facility.name}</span>
-                </button>
-              ))}
-              <button className="facility-pill active" type="button">
+              <button
+                className={`facility-pill ${!activeFacility ? 'active' : ''}`}
+                type="button"
+                onClick={() => navigate('/portfolio')}
+              >
                 <span className="facility-code">ALL</span>
                 <span>Portfolio view</span>
+                <span className="nav-count">
+                  {facilities.reduce((sum, f) => sum + (f.documentCount ?? 0), 0)}
+                </span>
               </button>
+              {facilities.map((facility) => (
+                <button
+                  className={`facility-pill ${activeFacility === facility.id ? 'active' : ''}`}
+                  key={facility.id}
+                  type="button"
+                  onClick={() => navigate(`/portfolio?facility=${encodeURIComponent(facility.id)}`)}
+                >
+                  <span className="facility-code">{facility.code}</span>
+                  <span>{facility.name}</span>
+                  {facility.documentCount > 0 ? (
+                    <span className="nav-count">{facility.documentCount}</span>
+                  ) : null}
+                </button>
+              ))}
             </div>
           </section>
         ) : null}

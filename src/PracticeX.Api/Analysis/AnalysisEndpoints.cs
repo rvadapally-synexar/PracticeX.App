@@ -185,26 +185,47 @@ public static class AnalysisEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
+        var counts = await db.DocumentCandidates
+            .Where(c => c.TenantId == userContext.TenantId && c.FacilityHintId != null)
+            .GroupBy(c => c.FacilityHintId!.Value)
+            .Select(g => new { FacilityId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.FacilityId, x => x.Count, cancellationToken);
+
         var rows = await db.Facilities
             .Where(f => f.TenantId == userContext.TenantId)
             .OrderBy(f => f.Name)
-            .Select(f => new FacilitySummary(f.Id, f.Code, f.Name, f.Status))
             .ToListAsync(cancellationToken);
-        return TypedResults.Ok((IReadOnlyList<FacilitySummary>)rows);
+
+        var summaries = rows
+            .Select(f => new FacilitySummary(
+                f.Id,
+                f.Code,
+                f.Name,
+                f.Status,
+                counts.TryGetValue(f.Id, out var c) ? c : 0))
+            .ToList();
+        return TypedResults.Ok((IReadOnlyList<FacilitySummary>)summaries);
     }
 
     private static async Task<Ok<PortfolioResponse>> GetPortfolio(
+        Guid? facilityId,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        var assets = await db.DocumentAssets
+        var query = db.DocumentAssets
             .Where(a => a.TenantId == userContext.TenantId)
             .Join(db.DocumentCandidates,
                 a => a.Id,
                 c => c.DocumentAssetId,
-                (a, c) => new { Asset = a, Candidate = c })
-            .ToListAsync(cancellationToken);
+                (a, c) => new { Asset = a, Candidate = c });
+
+        if (facilityId.HasValue)
+        {
+            query = query.Where(x => x.Candidate.FacilityHintId == facilityId.Value);
+        }
+
+        var assets = await query.ToListAsync(cancellationToken);
 
         var sourceObjectIds = assets
             .Where(x => x.Asset.SourceObjectId.HasValue)
@@ -240,6 +261,7 @@ public static class AnalysisEndpoints
                 IsExecuted: x.Asset.ExtractedIsExecuted,
                 ExpirationDate: expirationDate?.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture),
                 ExpirationStatus: status,
+                FacilityId: x.Candidate.FacilityHintId,
                 CreatedAt: x.Asset.CreatedAt);
         }).OrderByDescending(d => d.SizeBytes).ToList();
 
@@ -854,6 +876,7 @@ public sealed record PortfolioDocument(
     bool? IsExecuted,
     string? ExpirationDate,        // yyyy-MM-dd or null when no canonical date data
     string ExpirationStatus,       // "active" | "expired" | "unknown"
+    Guid? FacilityId,
     DateTimeOffset CreatedAt);
 
 public sealed record DocumentDetailResponse(
@@ -940,7 +963,8 @@ public sealed record FacilitySummary(
     Guid Id,
     string Code,
     string Name,
-    string Status);
+    string Status,
+    int DocumentCount);
 
 /// <summary>
 /// Reads the canonical-headline JSON written by Stage-2 LLM extraction and
