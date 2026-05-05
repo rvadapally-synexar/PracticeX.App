@@ -600,6 +600,60 @@ select {
   color: #cf1322;
 }
 
+/* Maintenance / "stay tuned" placeholder card. Calm, brand-aligned,
+   replaces the raw banner-error block on top-level page failures. */
+.maintenance-card {
+  background: var(--px-surface);
+  border: 1px solid var(--px-line);
+  border-radius: 14px;
+  margin: 32px auto;
+  max-width: 640px;
+  padding: 48px 40px;
+  text-align: center;
+  box-shadow: 0 1px 2px rgba(15, 30, 25, 0.04);
+}
+
+.maintenance-icon {
+  align-items: center;
+  background: color-mix(in srgb, var(--px-green, #1d6f42) 10%, var(--px-surface));
+  border-radius: 999px;
+  color: var(--px-green, #1d6f42);
+  display: inline-flex;
+  height: 44px;
+  justify-content: center;
+  margin-bottom: 18px;
+  width: 44px;
+}
+
+.maintenance-eyebrow {
+  color: var(--px-ink-3, #6b7470);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.maintenance-headline {
+  color: var(--px-ink, #0f1e19);
+  font-family: var(--px-font-serif, 'Source Serif Pro', Georgia, serif);
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.2;
+  margin: 12px 0 10px;
+}
+
+.maintenance-body {
+  color: var(--px-ink-2, #3c4742);
+  font-size: 15px;
+  line-height: 1.55;
+  margin: 0 auto;
+  max-width: 480px;
+}
+
+.maintenance-actions {
+  margin-top: 20px;
+}
+
 /* Document detail two-pane (Slice 11) */
 
 .document-detail-page .page-head {
