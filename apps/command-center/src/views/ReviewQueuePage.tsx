@@ -7,14 +7,16 @@ import {
   readableCandidateType,
   readableRelativeTime,
 } from '../lib/api';
+import { MaintenancePage } from '../shell/MaintenanceMessage';
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
   | { kind: 'ready'; items: ReviewQueueItem[] };
 
 export function ReviewQueuePage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -22,21 +24,26 @@ export function ReviewQueuePage() {
       try {
         const items = await analysisApi.getReviewQueue();
         if (!cancelled) setState({ kind: 'ready', items });
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        setState({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to load.' });
+        setState({ kind: 'error' });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   if (state.kind === 'loading') {
     return <div className="page"><div className="page-subtitle">Loading review queue…</div></div>;
   }
   if (state.kind === 'error') {
-    return <div className="page"><div className="banner banner-error">{state.message}</div></div>;
+    return (
+      <MaintenancePage
+        eyebrow="Review queue"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
+    );
   }
 
   const { items } = state;

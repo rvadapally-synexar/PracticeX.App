@@ -14,15 +14,17 @@ import {
   readableCandidateType,
   readableFamily,
 } from '../lib/api';
+import { MaintenancePage, MaintenanceMessage } from '../shell/MaintenanceMessage';
 
 type LoadState =
   | { kind: 'loading' }
   | { kind: 'empty' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
   | { kind: 'ready'; portfolio: Portfolio; insights: PortfolioInsights };
 
 export function PortfolioPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const [reloadKey, setReloadKey] = useState(0);
   const [searchParams, setSearchParams] = useSearchParams();
   const familyFilter = searchParams.get('family');
   const facilityFilter = searchParams.get('facility');
@@ -52,16 +54,19 @@ export function PortfolioPage() {
           return;
         }
         setState({ kind: 'ready', portfolio, insights });
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : 'Failed to load portfolio.';
-        setState({ kind: 'error', message });
+        // Top-level load failure -> calm "stay tuned" placeholder.
+        // Deliberately swallow the error detail; the maintenance card
+        // is the only thing the viewer should see while the API tier is
+        // unavailable.
+        setState({ kind: 'error' });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [facilityFilter]);
+  }, [facilityFilter, reloadKey]);
 
   if (state.kind === 'loading') {
     return (
@@ -95,9 +100,10 @@ export function PortfolioPage() {
 
   if (state.kind === 'error') {
     return (
-      <div className="page">
-        <div className="banner banner-error">{state.message}</div>
-      </div>
+      <MaintenancePage
+        eyebrow="Portfolio intelligence"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
     );
   }
 
@@ -238,8 +244,8 @@ function BatchLlmButton({
       const r = await analysisApi.llmExtractBatch(force);
       setResult(r);
       await onCompleted();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Batch extraction failed.');
+    } catch {
+      setError("Couldn't refine the portfolio just now — please try again in a moment.");
     } finally {
       setRunning(false);
     }
@@ -421,7 +427,7 @@ function InsightsPanel({ insights }: { insights: PortfolioInsights }) {
 type BriefState =
   | { kind: 'loading' }
   | { kind: 'absent' }
-  | { kind: 'error'; message: string; status?: number }
+  | { kind: 'error' }
   | { kind: 'ready'; brief: PortfolioBriefDto };
 
 function PortfolioBriefSection() {
@@ -440,13 +446,12 @@ function PortfolioBriefSection() {
         if (!cancelled) setState({ kind: 'ready', brief });
       } catch (err) {
         if (cancelled) return;
+        // 404 means the brief simply has not been generated for this
+        // tenant yet — render the "Generate brief" CTA. Anything else is
+        // a workspace-down condition; show the calm placeholder.
         const status = (err as { status?: number } | undefined)?.status;
-        const detail =
-          (err as { detail?: string } | undefined)?.detail ??
-          (err as Error)?.message ??
-          'unknown error';
         if (status === 404) setState({ kind: 'absent' });
-        else setState({ kind: 'error', message: detail, status });
+        else setState({ kind: 'error' });
       }
     })();
     return () => {
@@ -460,9 +465,10 @@ function PortfolioBriefSection() {
     try {
       const brief = await analysisApi.generatePortfolioBrief();
       setState({ kind: 'ready', brief });
-    } catch (err) {
-      const detail = (err as { detail?: string } | undefined)?.detail;
-      setGenError(detail ?? 'Failed to generate brief.');
+    } catch {
+      // Calm controlled message; we deliberately do not leak the
+      // upstream error string to the demo viewer.
+      setGenError("We're polishing this brief — try again in a moment.");
     } finally {
       setGenerating(false);
     }
@@ -493,7 +499,7 @@ function PortfolioBriefSection() {
             meeting.
           </div>
           {genError ? (
-            <div className="banner banner-error" style={{ marginTop: 12 }}>{genError}</div>
+            <div className="muted" style={{ marginTop: 12, fontSize: 13 }}>{genError}</div>
           ) : null}
         </Card>
       </section>
@@ -506,20 +512,13 @@ function PortfolioBriefSection() {
         <Card
           eyebrow="Premium · Cross-document synthesis"
           title="Practice Intelligence Brief"
-          actions={
-            <Button onClick={() => setReloadKey((k) => k + 1)}>Retry</Button>
-          }
         >
-          <div className="banner banner-error" style={{ marginBottom: 8 }}>
-            Couldn't load the Practice Intelligence Brief
-            {state.status ? ` (HTTP ${state.status})` : ''}.
-          </div>
-          <div className="muted" style={{ fontSize: 12 }}>
-            Detail: {state.message}
-          </div>
-          <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            If this persists, hard-reload the page (clears cached JS bundle).
-          </div>
+          <MaintenanceMessage
+            eyebrow="Practice Intelligence Brief"
+            headline="Stay tuned — good things coming."
+            body="The cross-document synthesis is regenerating. It will reappear here as soon as the workspace is back online."
+            onRetry={() => setReloadKey((k) => k + 1)}
+          />
         </Card>
       </section>
     );
@@ -548,7 +547,7 @@ function PortfolioBriefSection() {
         }
       >
         {genError ? (
-          <div className="banner banner-error" style={{ marginBottom: 12 }}>{genError}</div>
+          <div className="muted" style={{ marginBottom: 12, fontSize: 13 }}>{genError}</div>
         ) : null}
         {!collapsed ? (
           <article className="brief-prose portfolio-brief-prose">

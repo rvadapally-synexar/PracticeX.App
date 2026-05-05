@@ -10,6 +10,7 @@ import {
   readableCandidateType,
 } from '../lib/api';
 import { logEvent } from '../lib/analytics';
+import { MaintenancePage } from '../shell/MaintenanceMessage';
 
 type RightPaneTab = 'brief' | 'fields';
 
@@ -17,12 +18,13 @@ const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) ?? '/api'
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
   | { kind: 'ready'; detail: DocumentDetail };
 
 export function DocumentDetailPage() {
   const { assetId } = useParams<{ assetId: string }>();
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const [reloadKey, setReloadKey] = useState(0);
   const [tab, setTab] = useState<RightPaneTab>('brief');
   const [activeCitation, setActiveCitation] = useState<string | null>(null);
   const [flashKey, setFlashKey] = useState(0);
@@ -56,16 +58,15 @@ export function DocumentDetailPage() {
             candidateType: detail.candidateType ?? null,
           });
         }
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        const message = err instanceof Error ? err.message : 'Failed to load document.';
-        setState({ kind: 'error', message });
+        setState({ kind: 'error' });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [assetId]);
+  }, [assetId, reloadKey]);
 
   const sourceUrl = useMemo(() => {
     if (!assetId) return null;
@@ -76,7 +77,12 @@ export function DocumentDetailPage() {
     return <div className="page"><div className="page-subtitle">Loading document…</div></div>;
   }
   if (state.kind === 'error') {
-    return <div className="page"><div className="banner banner-error">{state.message}</div></div>;
+    return (
+      <MaintenancePage
+        eyebrow="Document"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
+    );
   }
 
   const { detail } = state;

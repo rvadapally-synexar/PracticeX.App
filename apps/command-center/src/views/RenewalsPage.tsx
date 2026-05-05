@@ -2,15 +2,17 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Card, KpiCard } from '@practicex/design-system';
 import { analysisApi, type RenewalAction, type RenewalsResponse, readableFamily } from '../lib/api';
+import { MaintenancePage } from '../shell/MaintenanceMessage';
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
   | { kind: 'ready'; data: RenewalsResponse };
 
 export function RenewalsPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [familyFilter, setFamilyFilter] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -18,19 +20,15 @@ export function RenewalsPage() {
       try {
         const data = await analysisApi.getRenewals();
         if (!cancelled) setState({ kind: 'ready', data });
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        const detail =
-          (err as { detail?: string } | undefined)?.detail ??
-          (err as Error)?.message ??
-          'Failed to load renewals.';
-        setState({ kind: 'error', message: detail });
+        setState({ kind: 'error' });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const filteredBuckets = useMemo(() => {
     if (state.kind !== 'ready') return [];
@@ -51,9 +49,10 @@ export function RenewalsPage() {
 
   if (state.kind === 'error') {
     return (
-      <div className="page">
-        <div className="banner banner-error">{state.message}</div>
-      </div>
+      <MaintenancePage
+        eyebrow="Renewals"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
     );
   }
 

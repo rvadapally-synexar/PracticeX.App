@@ -2,14 +2,16 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button, Card, KpiCard } from '@practicex/design-system';
 import { analysisApi, type DashboardStats, type Portfolio, type RenewalsResponse } from '../lib/api';
+import { MaintenancePage } from '../shell/MaintenanceMessage';
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
   | { kind: 'ready'; stats: DashboardStats; portfolio: Portfolio; renewals: RenewalsResponse | null };
 
 export function CommandCenterPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,21 +23,26 @@ export function CommandCenterPage() {
           analysisApi.getRenewals().catch(() => null),
         ]);
         if (!cancelled) setState({ kind: 'ready', stats, portfolio, renewals });
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        setState({ kind: 'error', message: err instanceof Error ? err.message : 'Failed to load.' });
+        setState({ kind: 'error' });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   if (state.kind === 'loading') {
     return <div className="page"><div className="page-subtitle">Loading…</div></div>;
   }
   if (state.kind === 'error') {
-    return <div className="page"><div className="banner banner-error">{state.message}</div></div>;
+    return (
+      <MaintenancePage
+        eyebrow="Command center"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
+    );
   }
 
   const { stats, portfolio, renewals } = state;

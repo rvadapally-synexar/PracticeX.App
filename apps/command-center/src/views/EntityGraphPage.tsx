@@ -6,10 +6,11 @@ import { Network, type Options } from 'vis-network/peer';
 import 'vis-network/styles/vis-network.css';
 import { analysisApi, type EntityGraph, type EntityGraphLink, type EntityGraphNode } from '../lib/api';
 import { logEvent } from '../lib/analytics';
+import { MaintenancePage } from '../shell/MaintenanceMessage';
 
 type LoadState =
   | { kind: 'loading' }
-  | { kind: 'error'; message: string }
+  | { kind: 'error' }
   | { kind: 'ready'; graph: EntityGraph };
 
 const TYPE_COLORS: Record<string, { background: string; border: string; highlight: string }> = {
@@ -32,6 +33,7 @@ export function EntityGraphPage() {
     new Set(['person', 'organization', 'asset', 'document']),
   );
   const [selected, setSelected] = useState<EntityGraphNode | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
   const navigate = useNavigate();
@@ -42,19 +44,15 @@ export function EntityGraphPage() {
       try {
         const graph = await analysisApi.getEntityGraph();
         if (!cancelled) setState({ kind: 'ready', graph });
-      } catch (err) {
+      } catch {
         if (cancelled) return;
-        const detail =
-          (err as { detail?: string } | undefined)?.detail ??
-          (err as Error)?.message ??
-          'Failed to load entity graph.';
-        setState({ kind: 'error', message: detail });
+        setState({ kind: 'error' });
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [reloadKey]);
 
   const filtered = useMemo(() => {
     if (state.kind !== 'ready') return null;
@@ -196,9 +194,10 @@ export function EntityGraphPage() {
   }
   if (state.kind === 'error') {
     return (
-      <div className="page">
-        <div className="banner banner-error">{state.message}</div>
-      </div>
+      <MaintenancePage
+        eyebrow="Entity graph"
+        onRetry={() => setReloadKey((k) => k + 1)}
+      />
     );
   }
 
