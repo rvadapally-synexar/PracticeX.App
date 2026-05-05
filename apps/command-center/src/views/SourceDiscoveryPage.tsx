@@ -259,17 +259,19 @@ export function SourceDiscoveryPage() {
 
       {state.error ? (
         <div
+          role="status"
           style={{
-            background: 'var(--px-orange-soft)',
-            border: '1px solid var(--px-orange)',
+            background: 'color-mix(in srgb, var(--px-green, #1d6f42) 8%, var(--px-surface))',
+            border: '1px solid color-mix(in srgb, var(--px-green, #1d6f42) 20%, var(--px-line))',
             borderRadius: 'var(--px-radius)',
-            color: 'var(--px-orange)',
+            color: 'var(--px-ink-2, #3c4742)',
             marginBottom: 18,
             padding: '10px 14px',
             fontSize: 13,
           }}
         >
-          API unreachable — {state.error}. The UI will still render but actions will fail until the API is up.
+          Workspace is being prepared — stay tuned, good things are coming.
+          You can browse this page; new uploads will resume once the workspace is back online.
         </div>
       ) : null}
 

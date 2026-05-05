@@ -50,6 +50,7 @@ export function AppShell() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [facilities, setFacilities] = useState<Facility[]>([]);
+  const [shellLoaded, setShellLoaded] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -77,6 +78,8 @@ export function AppShell() {
         if (f) setFacilities(f);
       } catch {
         // Sidebar gracefully degrades when API isn't reachable yet.
+      } finally {
+        if (!cancelled) setShellLoaded(true);
       }
     })();
     return () => {
@@ -98,7 +101,11 @@ export function AppShell() {
 
   const userName = user?.name ?? '—';
   const userInitials = user?.initials ?? '?';
-  const tenantName = user?.tenantName ?? 'Loading…';
+  // Once the initial load resolves we know whether the API answered. If it
+  // didn't, drop the perpetual "Loading…" placeholder for a calm,
+  // controlled label so the sidebar doesn't read as broken during a
+  // workspace-down window.
+  const tenantName = user?.tenantName ?? (shellLoaded ? 'Workspace' : 'Loading…');
 
   // Cloudflare Access intercepts /cdn-cgi/access/logout on any
   // Access-protected hostname and clears the application session
@@ -228,6 +235,10 @@ export function AppShell() {
           {stats ? (
             <div className="muted" style={{ marginTop: 4 }}>
               {stats.documents} docs · {stats.totalSizeMb.toFixed(1)} MB processed
+            </div>
+          ) : shellLoaded ? (
+            <div className="muted" style={{ marginTop: 4 }}>
+              Stay tuned — good things coming.
             </div>
           ) : null}
         </div>
