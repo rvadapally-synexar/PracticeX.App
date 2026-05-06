@@ -829,6 +829,7 @@ public static class AnalysisEndpoints
         DocumentCandidateTypes.PayerContract => "payer",
         DocumentCandidateTypes.ProcessorAgreement => "compliance",
         DocumentCandidateTypes.FeeSchedule => "fee_schedule",
+        DocumentCandidateTypes.OperationalData => "operational_data",
         _ => "unclassified"
     };
 }

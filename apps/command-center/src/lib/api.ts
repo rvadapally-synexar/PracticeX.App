@@ -268,6 +268,7 @@ export function readableCandidateType(type: string): string {
     bylaws: 'Bylaws',
     call_coverage_agreement: 'Call coverage agreement',
     service_agreement: 'Service agreement',
+    operational_data: 'Operational data',
     other: 'Other',
     unknown: 'Unclassified',
   }[type] ?? type;
@@ -559,6 +560,7 @@ export function readableFamily(family: string): string {
     payer: 'Payer contracts',
     compliance: 'Compliance / BAA',
     fee_schedule: 'Fee schedules',
+    operational_data: 'Operational records',
     unclassified: 'Unclassified',
   }[family] ?? family;
 }

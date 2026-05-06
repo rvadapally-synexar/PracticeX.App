@@ -36,6 +36,13 @@ public static class DocumentCandidateTypes
     public const string CallCoverageAgreement = "call_coverage_agreement";
     public const string ServiceAgreement = "service_agreement";
     public const string Other = "other";
+
+    // Non-contract operational records the LLM identifies after content read
+    // (staff schedules, license trackers, vacation logs, depreciation
+    // schedules, due-diligence questionnaires). These don't map to any
+    // contract family but are operationally valuable, especially for the
+    // scheduling-led wedge.
+    public const string OperationalData = "operational_data";
 }
 
 public static class DocumentCandidateStatus
