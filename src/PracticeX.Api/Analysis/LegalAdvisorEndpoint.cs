@@ -114,15 +114,22 @@ public static class LegalAdvisorEndpoint
         }
 
         var asset = await db.DocumentAssets
-            .FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == userContext.TenantId, cancellationToken);
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(a => a.Id == assetId, cancellationToken);
         if (asset is null) return TypedResults.NotFound();
 
         var candidate = await db.DocumentCandidates
-            .FirstOrDefaultAsync(c => c.DocumentAssetId == assetId && c.TenantId == userContext.TenantId, cancellationToken);
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(c => c.DocumentAssetId == assetId, cancellationToken);
         var candidateType = candidate?.CandidateType ?? "unknown";
 
         // Slice 21 RBAC: 404 (not 403) on out-of-scope memo generation.
         if (!userContext.IsAuthorizedForFacility(candidate?.FacilityHintId)) return TypedResults.NotFound();
+
+        // Slice 21 Phase 2: writes need a concrete tenant. The audit row
+        // we add below would otherwise land in the platform tenant when
+        // super-admin is in cross-tenant view. Re-pin to the asset's tenant
+        // so the audit trail stays with the doc's owning org.
 
         var docText = ResolveDocumentText(asset);
         if (string.IsNullOrWhiteSpace(docText))
@@ -139,7 +146,7 @@ public static class LegalAdvisorEndpoint
 
             db.AuditEvents.Add(new AuditEvent
             {
-                TenantId = userContext.TenantId,
+                TenantId = asset.TenantId,
                 ActorType = "user",
                 ActorId = userContext.UserId,
                 EventType = "legal_advisor.memo.generate",
@@ -180,7 +187,7 @@ public static class LegalAdvisorEndpoint
             asset.UpdatedAt = DateTimeOffset.UtcNow;
             db.AuditEvents.Add(new AuditEvent
             {
-                TenantId = userContext.TenantId,
+                TenantId = asset.TenantId,
                 ActorType = "user",
                 ActorId = userContext.UserId,
                 EventType = "legal_advisor.memo.failed",
@@ -217,13 +224,15 @@ public static class LegalAdvisorEndpoint
         CancellationToken cancellationToken)
     {
         var asset = await db.DocumentAssets
-            .FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == userContext.TenantId, cancellationToken);
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(a => a.Id == assetId, cancellationToken);
         if (asset is null) return TypedResults.NotFound();
         if (string.IsNullOrEmpty(asset.LegalMemoMd)) return TypedResults.NotFound();
 
         // Slice 21 RBAC: 404 (not 403) on out-of-scope memo reads.
         var facilityHint = await db.DocumentCandidates
-            .Where(c => c.DocumentAssetId == assetId && c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
+            .Where(c => c.DocumentAssetId == assetId)
             .Select(c => c.FacilityHintId)
             .FirstOrDefaultAsync(cancellationToken);
         if (!userContext.IsAuthorizedForFacility(facilityHint)) return TypedResults.NotFound();
@@ -259,17 +268,17 @@ public static class LegalAdvisorEndpoint
         // which we already do via /api/analysis/llm-extract-batch.
         // Slice 21 RBAC: batch only processes assets the caller can see.
         var visibleAssetIds = db.DocumentCandidates
-            .Where(c => c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ApplyFacilityScope(userContext)
             .Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
-            .Where(a => a.TenantId == userContext.TenantId &&
-                        a.LlmNarrativeMd != null &&
+            .ApplyTenantScope(userContext)
+            .Where(a => a.LlmNarrativeMd != null &&
                         visibleAssetIds.Contains(a.Id))
             .ToListAsync(cancellationToken);
 
         var sourceNameById = await db.SourceObjects
-            .Where(s => s.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -288,7 +297,8 @@ public static class LegalAdvisorEndpoint
             }
 
             var candidate = await db.DocumentCandidates
-                .FirstOrDefaultAsync(c => c.DocumentAssetId == asset.Id && c.TenantId == userContext.TenantId, cancellationToken);
+                .ApplyTenantScope(userContext)
+                .FirstOrDefaultAsync(c => c.DocumentAssetId == asset.Id, cancellationToken);
             var candidateType = candidate?.CandidateType ?? "unknown";
 
             var docText = ResolveDocumentText(asset);
@@ -332,6 +342,9 @@ public static class LegalAdvisorEndpoint
 
         sw.Stop();
 
+        // Batch event: pin to the caller's home/active tenant. In cross-
+        // tenant view that's the platform tenant — acceptable because the
+        // batch operation itself spans tenants by intent.
         db.AuditEvents.Add(new AuditEvent
         {
             TenantId = userContext.TenantId,
@@ -386,7 +399,8 @@ public static class LegalAdvisorEndpoint
         }
 
         var asset = await db.DocumentAssets
-            .FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == userContext.TenantId, cancellationToken);
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(a => a.Id == assetId, cancellationToken);
         if (asset is null) return TypedResults.NotFound();
         if (string.IsNullOrEmpty(asset.LegalMemoMd))
         {
@@ -396,7 +410,8 @@ public static class LegalAdvisorEndpoint
 
         // Slice 21 RBAC: 404 (not 403) on out-of-scope retry attempts.
         var facilityHint = await db.DocumentCandidates
-            .Where(c => c.DocumentAssetId == assetId && c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
+            .Where(c => c.DocumentAssetId == assetId)
             .Select(c => c.FacilityHintId)
             .FirstOrDefaultAsync(cancellationToken);
         if (!userContext.IsAuthorizedForFacility(facilityHint)) return TypedResults.NotFound();
@@ -463,21 +478,23 @@ public static class LegalAdvisorEndpoint
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        // Slice 21 RBAC: portfolio rows reflect facility scope.
+        // Slice 21 RBAC: portfolio rows reflect facility scope. Phase 2:
+        // tenant scope respects super-admin cross-tenant view.
         var visibleAssetIds = db.DocumentCandidates
-            .Where(c => c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ApplyFacilityScope(userContext)
             .Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
-            .Where(a => a.TenantId == userContext.TenantId && visibleAssetIds.Contains(a.Id))
+            .ApplyTenantScope(userContext)
+            .Where(a => visibleAssetIds.Contains(a.Id))
             .ToListAsync(cancellationToken);
 
         var sourceNames = await db.SourceObjects
-            .Where(s => s.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
 
         var candidatesByAsset = await db.DocumentCandidates
-            .Where(c => c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(c => c.DocumentAssetId, c => c.CandidateType, cancellationToken);
 
         var rows = assets.Select(a =>
@@ -538,15 +555,26 @@ public static class LegalAdvisorEndpoint
                 "LLM provider isn't configured."));
         }
 
+        // Slice 21 Phase 2: cross-doc synthesis writes a per-tenant brief
+        // row (counsel_briefs is keyed on tenant_id). When super-admin is
+        // in cross-tenant view we don't have a single home tenant for the
+        // synthesis — refuse rather than silently writing into the empty
+        // platform tenant.
+        if (userContext.IsCrossTenantView)
+        {
+            return TypedResults.BadRequest(new ProblemSummary("pick_tenant",
+                "Counsel's Brief synthesis is per-tenant. Pick an organization in the org switcher first."));
+        }
+
         // Slice 21 RBAC: cross-doc synthesis must respect facility scope.
         // A Parag-scoped Counsel's Brief MUST NOT mingle Synexar memos.
         var visibleAssetIds = db.DocumentCandidates
-            .Where(c => c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ApplyFacilityScope(userContext)
             .Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
-            .Where(a => a.TenantId == userContext.TenantId &&
-                        a.LegalMemoJson != null &&
+            .ApplyTenantScope(userContext)
+            .Where(a => a.LegalMemoJson != null &&
                         visibleAssetIds.Contains(a.Id))
             .ToListAsync(cancellationToken);
 
@@ -557,11 +585,11 @@ public static class LegalAdvisorEndpoint
         }
 
         var sourceNames = await db.SourceObjects
-            .Where(s => s.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
 
         var candidatesByAsset = await db.DocumentCandidates
-            .Where(c => c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(c => c.DocumentAssetId, c => c.CandidateType, cancellationToken);
 
         var memos = assets.Select(a =>
@@ -687,7 +715,14 @@ public static class LegalAdvisorEndpoint
     {
         // (Phase 2: tenant split has shipped, so the per-tenant counsel
         // brief is naturally scoped — facility users in their own tenant
-        // see only their org's brief. Phase 1 hack removed.)
+        // see only their org's brief.) For super-admin cross-tenant view
+        // the brief is per-tenant — return NotFound rather than silently
+        // showing the platform tenant's (empty) brief; the UI surfaces a
+        // "pick a tenant first" affordance.
+        if (userContext.IsCrossTenantView)
+        {
+            return TypedResults.NotFound();
+        }
         var brief = await db.CounselBriefs
             .FirstOrDefaultAsync(b => b.TenantId == userContext.TenantId, cancellationToken);
         if (brief is null) return TypedResults.NotFound();

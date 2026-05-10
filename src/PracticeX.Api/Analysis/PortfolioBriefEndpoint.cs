@@ -61,6 +61,15 @@ public static class PortfolioBriefEndpoint
             return TypedResults.NotFound();
         }
 
+        // Slice 21 Phase 2: portfolio briefs are written per-tenant. In
+        // cross-tenant view we don't have a single home tenant for the
+        // brief lookup — the UI shows a "pick an organization" affordance
+        // when this 404s, which is the right ask.
+        if (userContext.IsCrossTenantView)
+        {
+            return TypedResults.NotFound();
+        }
+
         var brief = await db.PortfolioBriefs
             .FirstOrDefaultAsync(b => b.TenantId == userContext.TenantId
                                    && b.FacilityId == facilityKey, cancellationToken);
@@ -94,6 +103,15 @@ public static class PortfolioBriefEndpoint
         }
 
         var facilityKey = facility ?? PortfolioBrief.AllFacilities;
+
+        // Slice 21 Phase 2: brief generation writes a per-tenant row.
+        // Refuse to write into the platform tenant when super-admin
+        // hasn't picked an organization.
+        if (userContext.IsCrossTenantView)
+        {
+            return TypedResults.BadRequest(new ProblemSummary("pick_tenant",
+                "Portfolio Brief generation is per-tenant. Pick an organization in the org switcher first."));
+        }
 
         // Slice 21 RBAC: same gating as the GET — block facility users
         // from generating an "all-facilities" brief or one for a facility

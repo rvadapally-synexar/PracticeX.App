@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using PracticeX.Application.Common;
 using PracticeX.Domain.Audit;
 using PracticeX.Infrastructure.Persistence;
+using PracticeX.Infrastructure.Tenancy;
 
 namespace PracticeX.Api.Analytics;
 
@@ -105,8 +106,8 @@ public static class AnalyticsEndpoint
         var cap = Math.Clamp(limit ?? 500, 1, 5000);
 
         var rows = await db.AuditEvents
-            .Where(a => a.TenantId == userContext.TenantId
-                     && a.ActorType == "external_viewer"
+            .ApplyTenantScope(userContext)
+            .Where(a => a.ActorType == "external_viewer"
                      && a.CreatedAt >= sinceDt)
             .OrderByDescending(a => a.CreatedAt)
             .Take(cap)

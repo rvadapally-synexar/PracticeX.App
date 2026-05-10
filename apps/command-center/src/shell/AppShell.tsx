@@ -163,7 +163,7 @@ export function AppShell() {
               cursor: 'pointer',
             }}
           >
-            <option value="">— Platform (default) —</option>
+            <option value="">All organizations</option>
             {tenants.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.name}
@@ -257,6 +257,14 @@ export function AppShell() {
                     });
                     navigate(`/portfolio?facility=${encodeURIComponent(facility.id)}`);
                   }}
+                  // In cross-tenant view, facilities from multiple
+                  // organizations show side by side; tooltip carries the
+                  // owning tenant so super-admin can disambiguate.
+                  title={
+                    user?.isCrossTenantView
+                      ? `${facility.name} · ${facility.tenantName}`
+                      : facility.name
+                  }
                 >
                   <span className="facility-code">{facility.code}</span>
                   <span>{facility.name}</span>

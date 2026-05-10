@@ -14,38 +14,62 @@ namespace PracticeX.Infrastructure.Tenancy;
 /// </summary>
 public static class DemoCurrentUserContext
 {
-    private static readonly Guid DemoTenantId = new("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid DemoUserId = new("22222222-2222-2222-2222-222222222222");
+    // Slice 21 Phase 2 (renumber): the original seed used pattern UUIDs
+    // (`11111111-...`, `22222222-...`) that read as obviously fake in
+    // URLs and audit logs. The renumber migration moved them to real v4
+    // UUIDs; the constants here track that move so a fresh-db dev start
+    // produces the same ids as a renumbered prod db. See
+    // migrations/20260510_renumber_placeholder_ids.sql for the full map.
+    private static readonly Guid DemoTenantId = new("02b32f45-2ad4-4aa3-865a-6150d8fd3f98");
+    private static readonly Guid DemoUserId = new("ed785f04-c5a8-4539-ae4c-2f41ed002477");
 
     public static async Task EnsureSeededAsync(PracticeXDbContext dbContext, CancellationToken cancellationToken)
     {
+        // Lookup by id (post-renumber); if not found, fall back to lookup
+        // by name. The fallback covers the transition window where the
+        // renumber migration hasn't run yet — without it, the seeder
+        // would insert a SECOND platform tenant row with the new id while
+        // the old one still exists, leaving the DB in a duplicate state.
+        // Once the migration runs the by-id lookup wins.
         var tenant = await dbContext.Tenants.FirstOrDefaultAsync(t => t.Id == DemoTenantId, cancellationToken);
+        tenant ??= await dbContext.Tenants
+            .FirstOrDefaultAsync(t => t.Name == "PracticeX Platform" || t.Name == "PracticeX",
+                cancellationToken);
         if (tenant is null)
         {
             dbContext.Tenants.Add(new Tenant
             {
                 Id = DemoTenantId,
-                Name = "PracticeX",
+                Name = "PracticeX Platform",
                 Status = "active",
                 DataRegion = "us",
                 BaaStatus = "signed",
                 CreatedAt = DateTimeOffset.UtcNow
             });
         }
-        else if (tenant.Name == "PracticeX Demo Group")
+        else if (tenant.Name == "PracticeX Demo Group" || tenant.Name == "PracticeX")
         {
-            // Backfill old demo seed name on existing rows.
-            tenant.Name = "PracticeX";
+            // Backfill old demo seed name on existing rows. Slice 21
+            // Phase 2 renamed the umbrella to "PracticeX Platform".
+            tenant.Name = "PracticeX Platform";
             tenant.UpdatedAt = DateTimeOffset.UtcNow;
         }
 
+        // User lookup: prefer id (post-renumber), then fall back to email
+        // (so a pre-renumber DB with the demo user under the old id keeps
+        // working until the migration moves the row).
         var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == DemoUserId, cancellationToken);
+        user ??= await dbContext.Users.FirstOrDefaultAsync(
+            u => u.Email == "rvadapally@practicex.ai" || u.Email == "rvadapally@synexar.ai",
+            cancellationToken);
         if (user is null)
         {
+            // Use the resolved tenant's id so this works against either a
+            // pre-renumber (old id) or post-renumber (new id) DB.
             dbContext.Users.Add(new AppUser
             {
                 Id = DemoUserId,
-                TenantId = DemoTenantId,
+                TenantId = tenant?.Id ?? DemoTenantId,
                 Email = "rvadapally@practicex.ai",
                 Name = "Raghuram Vadapally",
                 Status = "active",

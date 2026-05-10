@@ -12,9 +12,11 @@ using PracticeX.Application.SourceDiscovery.Connectors;
 using PracticeX.Application.SourceDiscovery.Ingestion;
 using PracticeX.Application.SourceDiscovery.Outlook;
 using PracticeX.Discovery.Contracts;
+using PracticeX.Api.Analysis;
 using PracticeX.Domain.Documents;
 using PracticeX.Domain.Sources;
 using PracticeX.Infrastructure.Persistence;
+using PracticeX.Infrastructure.Tenancy;
 
 namespace PracticeX.Api.SourceDiscovery;
 
@@ -76,7 +78,7 @@ public static class SourceDiscoveryEndpoints
         CancellationToken cancellationToken)
     {
         var connections = await db.SourceConnections
-            .Where(c => c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new SourceConnectionDto(
                 c.Id,
@@ -706,7 +708,7 @@ public static class SourceDiscoveryEndpoints
     {
         var take = Math.Clamp(limit ?? 20, 1, 100);
         var batches = await db.IngestionBatches
-            .Where(b => b.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .OrderByDescending(b => b.CreatedAt)
             .Take(take)
             .Select(b => new IngestionBatchDto(
@@ -731,7 +733,9 @@ public static class SourceDiscoveryEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        var b = await db.IngestionBatches.FirstOrDefaultAsync(x => x.Id == batchId && x.TenantId == userContext.TenantId, cancellationToken);
+        var b = await db.IngestionBatches
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(x => x.Id == batchId, cancellationToken);
         if (b is null)
         {
             return TypedResults.NotFound();
@@ -748,34 +752,46 @@ public static class SourceDiscoveryEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        var batch = await db.IngestionBatches.FirstOrDefaultAsync(
-            x => x.Id == batchId && x.TenantId == userContext.TenantId, cancellationToken);
+        // Slice 21 Phase 2: super-admin in cross-tenant view can delete a
+        // batch across any tenant — but the cascade needs the batch's own
+        // tenant_id to drop child rows correctly.
+        var batch = await db.IngestionBatches
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(x => x.Id == batchId, cancellationToken);
         if (batch is null)
         {
             return TypedResults.NotFound();
         }
 
-        await CascadeDeleteBatchAsync(db, batchId, userContext.TenantId, userContext.UserId, cancellationToken);
+        await CascadeDeleteBatchAsync(db, batchId, batch.TenantId, userContext.UserId, cancellationToken);
         await db.SaveChangesAsync(cancellationToken);
         return TypedResults.NoContent();
     }
 
-    private static async Task<Ok<DeleteAllBatchesResult>> DeleteAllBatches(
+    private static async Task<Results<Ok<DeleteAllBatchesResult>, BadRequest<ProblemSummary>>> DeleteAllBatches(
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        var batchIds = await db.IngestionBatches
-            .Where(x => x.TenantId == userContext.TenantId)
-            .Select(x => x.Id)
+        // Slice 21 Phase 2: refuse the bulk operation in cross-tenant view —
+        // it would otherwise wipe every tenant's batches at once.
+        if (userContext.IsCrossTenantView)
+        {
+            return TypedResults.BadRequest(new ProblemSummary("pick_tenant",
+                "Bulk batch deletion is per-tenant. Pick an organization in the org switcher first."));
+        }
+
+        var batches = await db.IngestionBatches
+            .ApplyTenantScope(userContext)
+            .Select(x => new { x.Id, x.TenantId })
             .ToListAsync(cancellationToken);
 
-        foreach (var id in batchIds)
+        foreach (var b in batches)
         {
-            await CascadeDeleteBatchAsync(db, id, userContext.TenantId, userContext.UserId, cancellationToken);
+            await CascadeDeleteBatchAsync(db, b.Id, b.TenantId, userContext.UserId, cancellationToken);
         }
         await db.SaveChangesAsync(cancellationToken);
-        return TypedResults.Ok(new DeleteAllBatchesResult(batchIds.Count));
+        return TypedResults.Ok(new DeleteAllBatchesResult(batches.Count));
     }
 
     private static async Task CascadeDeleteBatchAsync(
@@ -852,7 +868,7 @@ public static class SourceDiscoveryEndpoints
 
         var query = db.DocumentCandidates
             .AsNoTracking()
-            .Where(c => c.TenantId == userContext.TenantId);
+            .ApplyTenantScope(userContext);
 
         if (!string.IsNullOrWhiteSpace(status))
         {

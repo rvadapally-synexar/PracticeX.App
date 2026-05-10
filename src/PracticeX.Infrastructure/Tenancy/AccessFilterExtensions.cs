@@ -1,6 +1,10 @@
 using Microsoft.EntityFrameworkCore;
 using PracticeX.Application.Common;
+using PracticeX.Domain.Audit;
+using PracticeX.Domain.Contracts;
 using PracticeX.Domain.Documents;
+using PracticeX.Domain.Organization;
+using PracticeX.Domain.Sources;
 using PracticeX.Infrastructure.Persistence;
 
 namespace PracticeX.Infrastructure.Tenancy;
@@ -77,4 +81,63 @@ public static class AccessFilterExtensions
         userContext.IsSuperAdmin
         || userContext.IsOrgAdmin
         || (userContext.AccessibleFacilityIds?.Contains(facilityId) ?? false);
+
+    // ---------------------------------------------------------------------
+    // Slice 21 Phase 2 — tenant-scope helpers.
+    //
+    // When a super-admin has not picked a tenant via X-Tenant-Override,
+    // <see cref="ICurrentUserContext.IsCrossTenantView"/> is true and read
+    // queries should NOT filter by tenant_id — they're meant to span every
+    // tenant. Otherwise the predicate is the usual tenant equality.
+    //
+    // One overload per tenant-scoped entity. Verbose but safe — EF Core
+    // has no trouble translating these (the lambda body is column equality
+    // against a captured Guid). A generic interface would be tighter but
+    // would require touching all 18 domain entities; the verbosity here is
+    // contained to one file.
+    // ---------------------------------------------------------------------
+
+    public static IQueryable<DocumentAsset> ApplyTenantScope(
+        this IQueryable<DocumentAsset> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<DocumentCandidate> ApplyTenantScope(
+        this IQueryable<DocumentCandidate> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<SourceObject> ApplyTenantScope(
+        this IQueryable<SourceObject> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<SourceConnection> ApplyTenantScope(
+        this IQueryable<SourceConnection> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<IngestionBatch> ApplyTenantScope(
+        this IQueryable<IngestionBatch> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<IngestionJob> ApplyTenantScope(
+        this IQueryable<IngestionJob> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<ContractRecord> ApplyTenantScope(
+        this IQueryable<ContractRecord> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<AuditEvent> ApplyTenantScope(
+        this IQueryable<AuditEvent> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<Facility> ApplyTenantScope(
+        this IQueryable<Facility> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<PortfolioBrief> ApplyTenantScope(
+        this IQueryable<PortfolioBrief> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
+
+    public static IQueryable<CounselBrief> ApplyTenantScope(
+        this IQueryable<CounselBrief> q, ICurrentUserContext u) =>
+        u.IsCrossTenantView ? q : q.Where(x => x.TenantId == u.TenantId);
 }

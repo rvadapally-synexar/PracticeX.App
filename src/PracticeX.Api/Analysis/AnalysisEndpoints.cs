@@ -44,13 +44,15 @@ public static class AnalysisEndpoints
         CancellationToken cancellationToken)
     {
         var asset = await db.DocumentAssets
-            .FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == userContext.TenantId, cancellationToken);
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(a => a.Id == assetId, cancellationToken);
         if (asset is null) return Results.NotFound();
 
         // Slice 21 RBAC: deny content of docs outside the caller's facility
         // scope. 404 (not 403) so we don't leak the asset's existence.
         var facilityHint = await db.DocumentCandidates
-            .Where(c => c.DocumentAssetId == assetId && c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
+            .Where(c => c.DocumentAssetId == assetId)
             .Select(c => c.FacilityHintId)
             .FirstOrDefaultAsync(cancellationToken);
         if (!userContext.IsAuthorizedForFacility(facilityHint)) return Results.NotFound();
@@ -93,25 +95,28 @@ public static class AnalysisEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        var tenantId = userContext.TenantId;
-        // Slice 21 RBAC: counts must reflect the caller's facility scope.
+        // Slice 21 Phase 2: tenant scope is applied via ApplyTenantScope —
+        // super-admin in cross-tenant view sees the cross-tenant rollup;
+        // everyone else gets their tenant's slice. Facility scope still
+        // applies on top for facility users.
         var visibleCandidates = db.DocumentCandidates
-            .Where(c => c.TenantId == tenantId)
+            .ApplyTenantScope(userContext)
             .ApplyFacilityScope(userContext);
         var visibleAssetIds = visibleCandidates.Select(c => c.DocumentAssetId);
         var visibleAssets = db.DocumentAssets
-            .Where(a => a.TenantId == tenantId && visibleAssetIds.Contains(a.Id));
+            .ApplyTenantScope(userContext)
+            .Where(a => visibleAssetIds.Contains(a.Id));
         var totalDocs = await visibleAssets.CountAsync(cancellationToken);
         var totalCandidates = await visibleCandidates.CountAsync(cancellationToken);
         var pendingReview = await visibleCandidates.CountAsync(
             c => c.Status == DocumentCandidateStatus.PendingReview, cancellationToken);
-        var batches = await db.IngestionBatches.CountAsync(b => b.TenantId == tenantId, cancellationToken);
-        var contractsTracked = await db.Contracts.CountAsync(x => x.TenantId == tenantId, cancellationToken);
+        var batches = await db.IngestionBatches.ApplyTenantScope(userContext).CountAsync(cancellationToken);
+        var contractsTracked = await db.Contracts.ApplyTenantScope(userContext).CountAsync(cancellationToken);
         var totalSize = await visibleAssets.SumAsync(a => (long?)a.SizeBytes, cancellationToken) ?? 0L;
         var docIntelPages = await visibleAssets.SumAsync(a => (int?)a.LayoutPageCount, cancellationToken) ?? 0;
 
         return TypedResults.Ok(new DashboardResponse(
-            TenantId: tenantId,
+            TenantId: userContext.TenantId,
             Documents: totalDocs,
             Candidates: totalCandidates,
             ContractsTracked: contractsTracked,
@@ -128,18 +133,20 @@ public static class AnalysisEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        var tenantId = userContext.TenantId;
-        // Slice 21 RBAC: facility users only see review items for their facilities.
+        // Slice 21 Phase 2: tenant scope via ApplyTenantScope; facility
+        // scope on top for facility users.
         var scopedCandidateIds = db.DocumentCandidates
-            .Where(c => c.TenantId == tenantId && c.Status == DocumentCandidateStatus.PendingReview)
+            .ApplyTenantScope(userContext)
+            .Where(c => c.Status == DocumentCandidateStatus.PendingReview)
             .ApplyFacilityScope(userContext)
             .Select(c => c.Id);
+        var candidateBase = db.DocumentCandidates.ApplyTenantScope(userContext);
         var rows = await (
-            from c in db.DocumentCandidates
+            from c in candidateBase
             join a in db.DocumentAssets on c.DocumentAssetId equals a.Id
             join s in db.SourceObjects on a.SourceObjectId equals s.Id into sj
             from s in sj.DefaultIfEmpty()
-            where c.TenantId == tenantId && c.Status == DocumentCandidateStatus.PendingReview
+            where c.Status == DocumentCandidateStatus.PendingReview
                   && scopedCandidateIds.Contains(c.Id)
             orderby c.CreatedAt descending
             select new
@@ -203,15 +210,24 @@ public static class AnalysisEndpoints
             ? null
             : userContext.AccessibleFacilityIds.ToList();
 
+        // Slice 21 Phase 2: in cross-tenant view, surface "All organizations"
+        // as the active tenant label so the UI can render the right header
+        // and switcher hint. Tenant id stays as the home (platform) tenant
+        // for write fallbacks.
+        var tenantName = userContext.IsCrossTenantView
+            ? "All organizations"
+            : tenant?.Name ?? "Unknown";
+
         return TypedResults.Ok(new CurrentUserResponse(
             UserId: user?.Id ?? userContext.UserId,
             Name: name,
             Email: user?.Email ?? "",
             Initials: string.IsNullOrWhiteSpace(initials) ? "??" : initials,
             TenantId: tenant?.Id ?? userContext.TenantId,
-            TenantName: tenant?.Name ?? "Unknown",
+            TenantName: tenantName,
             Role: role,
             IsSuperAdmin: userContext.IsSuperAdmin,
+            IsCrossTenantView: userContext.IsCrossTenantView,
             AccessibleFacilityIds: facilityIds
         ));
     }
@@ -244,16 +260,19 @@ public static class AnalysisEndpoints
         CancellationToken cancellationToken)
     {
         var counts = await db.DocumentCandidates
-            .Where(c => c.TenantId == userContext.TenantId && c.FacilityHintId != null)
+            .ApplyTenantScope(userContext)
+            .Where(c => c.FacilityHintId != null)
             .ApplyFacilityScope(userContext)
             .GroupBy(c => c.FacilityHintId!.Value)
             .Select(g => new { FacilityId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.FacilityId, x => x.Count, cancellationToken);
 
         // Slice 21 RBAC: facility users see only their own facilities in
-        // the selector. Super/org admins see every facility in the tenant.
+        // the selector. Super-admin in cross-tenant view sees every
+        // facility across every tenant; org admins / scoped super-admin
+        // see facilities in their active tenant only.
         var rows = await db.Facilities
-            .Where(f => f.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .Where(f => userContext.IsSuperAdmin
                      || userContext.IsOrgAdmin
                      || (userContext.AccessibleFacilityIds != null
@@ -261,13 +280,23 @@ public static class AnalysisEndpoints
             .OrderBy(f => f.Name)
             .ToListAsync(cancellationToken);
 
+        // Cross-tenant view shows facilities from multiple tenants; the
+        // sidebar pill is "<code> · <facility name>" with the tenant name
+        // hanging off so super-admin can tell Eagle's facility from
+        // Synexar's at a glance.
+        var tenantNames = await db.Tenants
+            .Where(t => rows.Select(r => r.TenantId).Contains(t.Id))
+            .ToDictionaryAsync(t => t.Id, t => t.Name, cancellationToken);
+
         var summaries = rows
             .Select(f => new FacilitySummary(
                 f.Id,
                 f.Code,
                 f.Name,
                 f.Status,
-                counts.TryGetValue(f.Id, out var c) ? c : 0))
+                counts.TryGetValue(f.Id, out var c) ? c : 0,
+                f.TenantId,
+                tenantNames.TryGetValue(f.TenantId, out var tn) ? tn : "—"))
             .ToList();
         return TypedResults.Ok((IReadOnlyList<FacilitySummary>)summaries);
     }
@@ -278,9 +307,12 @@ public static class AnalysisEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
+        // Slice 21 Phase 2: tenant scope honors super-admin cross-tenant
+        // view. The asset/candidate join already aligns rows by tenant
+        // because ApplyTenantScope filters both sides identically.
         var query = db.DocumentAssets
-            .Where(a => a.TenantId == userContext.TenantId)
-            .Join(db.DocumentCandidates,
+            .ApplyTenantScope(userContext)
+            .Join(db.DocumentCandidates.ApplyTenantScope(userContext),
                 a => a.Id,
                 c => c.DocumentAssetId,
                 (a, c) => new { Asset = a, Candidate = c });
@@ -391,11 +423,13 @@ public static class AnalysisEndpoints
         CancellationToken cancellationToken)
     {
         var asset = await db.DocumentAssets
-            .FirstOrDefaultAsync(a => a.Id == assetId && a.TenantId == userContext.TenantId, cancellationToken);
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(a => a.Id == assetId, cancellationToken);
         if (asset is null) return TypedResults.NotFound();
 
         var candidate = await db.DocumentCandidates
-            .FirstOrDefaultAsync(c => c.DocumentAssetId == assetId && c.TenantId == userContext.TenantId, cancellationToken);
+            .ApplyTenantScope(userContext)
+            .FirstOrDefaultAsync(c => c.DocumentAssetId == assetId, cancellationToken);
 
         // Slice 21 RBAC: 404 (not 403) on out-of-scope detail requests.
         if (!userContext.IsAuthorizedForFacility(candidate?.FacilityHintId)) return TypedResults.NotFound();
@@ -551,19 +585,20 @@ public static class AnalysisEndpoints
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        // Pull every asset for this tenant; prefer LLM-extracted JSON when
-        // present (clean entity names, structured lists), fall back to the
-        // regex output for docs that haven't been LLM-refined yet.
+        // Pull every asset for the active scope; prefer LLM-extracted JSON
+        // when present (clean entity names, structured lists), fall back to
+        // the regex output for docs that haven't been LLM-refined yet.
         // Slice 21 RBAC: cross-doc insights must respect facility scope —
         // a Parag-scoped user must not see Synexar landlords/tenants/etc
-        // mingled into their insights view.
+        // mingled into their insights view. Slice 21 Phase 2: super-admin
+        // in cross-tenant view sees insights aggregated across tenants.
         var visibleAssetIds = db.DocumentCandidates
-            .Where(c => c.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ApplyFacilityScope(userContext)
             .Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
-            .Where(a => a.TenantId == userContext.TenantId &&
-                        (a.LlmExtractedFieldsJson != null || a.ExtractedFieldsJson != null) &&
+            .ApplyTenantScope(userContext)
+            .Where(a => (a.LlmExtractedFieldsJson != null || a.ExtractedFieldsJson != null) &&
                         visibleAssetIds.Contains(a.Id))
             .ToListAsync(cancellationToken);
 
@@ -576,7 +611,7 @@ public static class AnalysisEndpoints
         var entities = new EntityRegistry();
 
         var sourceNames = await db.SourceObjects
-            .Where(s => s.TenantId == userContext.TenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
 
         foreach (var asset in assets)
@@ -1071,6 +1106,7 @@ public sealed record CurrentUserResponse(
     string TenantName,
     string Role,                                       // "super_admin" | "org_admin" | "facility_user"
     bool IsSuperAdmin,
+    bool IsCrossTenantView,                            // true when super-admin is viewing every tenant
     IReadOnlyList<Guid>? AccessibleFacilityIds);       // null = unrestricted in tenant
 
 public sealed record FacilitySummary(
@@ -1078,7 +1114,9 @@ public sealed record FacilitySummary(
     string Code,
     string Name,
     string Status,
-    int DocumentCount);
+    int DocumentCount,
+    Guid TenantId,
+    string TenantName);
 
 public sealed record TenantSummary(
     Guid Id,

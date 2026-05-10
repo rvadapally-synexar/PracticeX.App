@@ -541,6 +541,11 @@ export interface CurrentUser {
   // same scope. Frontend uses these only for visible affordances.
   role: 'super_admin' | 'org_admin' | 'facility_user';
   isSuperAdmin: boolean;
+  // Slice 21 Phase 2: true when super-admin is viewing every tenant (no
+  // X-Tenant-Override header). Frontend uses this to relabel the tenant
+  // card and to gate per-tenant generation surfaces (Counsel's Brief,
+  // Portfolio Brief) that need a concrete tenant first.
+  isCrossTenantView: boolean;
   accessibleFacilityIds: string[] | null;  // null = unrestricted in tenant
 }
 
@@ -557,6 +562,8 @@ export interface Facility {
   name: string;
   status: string;
   documentCount: number;
+  tenantId: string;
+  tenantName: string;
 }
 
 export interface PortfolioBrief {

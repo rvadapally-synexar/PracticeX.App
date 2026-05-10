@@ -39,8 +39,11 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
     // their AppUser row.
     private const string TenantOverrideHeader = "X-Tenant-Override";
 
-    private static readonly Guid DemoTenantId = new("11111111-1111-1111-1111-111111111111");
-    private static readonly Guid DemoUserId = new("22222222-2222-2222-2222-222222222222");
+    // Slice 21 Phase 2 (renumber): match the post-renumber ids — see
+    // DemoCurrentUserContext for the rationale + the renumber migration
+    // for the full old→new map.
+    private static readonly Guid DemoTenantId = new("02b32f45-2ad4-4aa3-865a-6150d8fd3f98");
+    private static readonly Guid DemoUserId = new("ed785f04-c5a8-4539-ae4c-2f41ed002477");
 
     private readonly IHttpContextAccessor _httpContextAccessor;
     private readonly PracticeXDbContext _db;
@@ -60,6 +63,7 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
     public string ActorType => "user";
     public bool IsSuperAdmin => _resolved.Value.IsSuperAdmin;
     public bool IsOrgAdmin => _resolved.Value.IsOrgAdmin;
+    public bool IsCrossTenantView => _resolved.Value.IsCrossTenantView;
     public IReadOnlySet<Guid>? AccessibleFacilityIds => _resolved.Value.AccessibleFacilityIds;
 
     public bool IsAuthorizedForFacility(Guid? facilityId)
@@ -93,21 +97,29 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
         {
             // Last resort — pre-seed scenario. Behave as a stub super-admin
             // pointing at the demo tenant so endpoints don't NPE; production
-            // traffic should never hit this branch.
-            return new ResolvedUser(DemoTenantId, DemoUserId, IsSuperAdmin: true, IsOrgAdmin: false, null);
+            // traffic should never hit this branch. Cross-tenant view is
+            // ON because there's no concrete tenant override.
+            return new ResolvedUser(DemoTenantId, DemoUserId, IsSuperAdmin: true, IsOrgAdmin: false, IsCrossTenantView: true, null);
         }
 
         if (user.IsSuperAdmin)
         {
             // Phase 2 — tenant switching: super-admin can override the
-            // active tenant context with X-Tenant-Override. The header
-            // value must reference an existing tenant row; otherwise
-            // fall back to the user's home tenant. Without an override,
-            // super-admin defaults to their home tenant (which after the
-            // tenant split is the platform tenant — empty of docs by
-            // design, prompts the UI to surface a tenant-picker).
-            var effectiveTenant = ResolveTenantOverride(user.TenantId);
-            return new ResolvedUser(effectiveTenant, user.Id, IsSuperAdmin: true, IsOrgAdmin: false, null);
+            // active tenant context with X-Tenant-Override. When the
+            // header points at a real tenant, that tenant scopes every
+            // read; when it's missing/blank/invalid, super-admin defaults
+            // to a cross-tenant view (sees every tenant's data). This
+            // matches the user's mental model — "super admin = see
+            // everything" — and keeps the platform tenant as a write-time
+            // home rather than the empty default surface.
+            var (effectiveTenant, isOverride) = ResolveTenantOverride(user.TenantId);
+            return new ResolvedUser(
+                effectiveTenant,
+                user.Id,
+                IsSuperAdmin: true,
+                IsOrgAdmin: false,
+                IsCrossTenantView: !isOverride,
+                null);
         }
 
         // Compute access set from role assignments. Org admin = any active
@@ -124,7 +136,7 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
         var isOrgAdmin = assignments.Any(a => a.RoleName == StandardRoleNames.OrgAdmin);
         if (isOrgAdmin)
         {
-            return new ResolvedUser(user.TenantId, user.Id, IsSuperAdmin: false, IsOrgAdmin: true, null);
+            return new ResolvedUser(user.TenantId, user.Id, IsSuperAdmin: false, IsOrgAdmin: true, IsCrossTenantView: false, null);
         }
 
         var facilityIds = assignments
@@ -134,25 +146,27 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
 
         // No assignments = no access. Return an empty set, not null — null
         // means "unrestricted" for org/super admins.
-        return new ResolvedUser(user.TenantId, user.Id, IsSuperAdmin: false, IsOrgAdmin: false, facilityIds);
+        return new ResolvedUser(user.TenantId, user.Id, IsSuperAdmin: false, IsOrgAdmin: false, IsCrossTenantView: false, facilityIds);
     }
 
     /// <summary>
-    /// Returns the tenant id the super-admin is currently viewing. If they
-    /// passed a valid X-Tenant-Override header it wins; otherwise we use
-    /// their home tenant (the platform tenant, post-split). Invalid override
-    /// values silently fall back — better than 4xxing every API call when
-    /// the cookie is stale.
+    /// Returns the tenant id the super-admin is currently viewing and
+    /// whether a real override was supplied. When the header is missing,
+    /// blank, or points at a non-existent tenant, we fall back to the
+    /// home tenant AND report no-override — that triggers the
+    /// cross-tenant view in <see cref="Resolve"/>. Invalid override values
+    /// silently fall back rather than 4xxing every API call when the
+    /// cookie is stale.
     /// </summary>
-    private Guid ResolveTenantOverride(Guid homeTenantId)
+    private (Guid TenantId, bool IsOverride) ResolveTenantOverride(Guid homeTenantId)
     {
         var ctx = _httpContextAccessor.HttpContext;
-        if (ctx is null) return homeTenantId;
+        if (ctx is null) return (homeTenantId, false);
         var raw = HeaderValue(ctx, TenantOverrideHeader);
-        if (string.IsNullOrWhiteSpace(raw)) return homeTenantId;
-        if (!Guid.TryParse(raw, out var requested)) return homeTenantId;
+        if (string.IsNullOrWhiteSpace(raw)) return (homeTenantId, false);
+        if (!Guid.TryParse(raw, out var requested)) return (homeTenantId, false);
         var exists = _db.Tenants.AsNoTracking().Any(t => t.Id == requested);
-        return exists ? requested : homeTenantId;
+        return exists ? (requested, true) : (homeTenantId, false);
     }
 
     private string? ResolveEmail()
@@ -210,5 +224,6 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
         Guid UserId,
         bool IsSuperAdmin,
         bool IsOrgAdmin,
+        bool IsCrossTenantView,
         IReadOnlySet<Guid>? AccessibleFacilityIds);
 }

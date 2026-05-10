@@ -30,25 +30,26 @@ public static class RenewalsEndpoint
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
-        var tenantId = userContext.TenantId;
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
-        // Slice 21 RBAC: renewals reflect facility scope.
+        // Slice 21 RBAC: renewals reflect facility scope. Phase 2:
+        // tenant scope respects super-admin cross-tenant view.
         var visibleAssetIds = db.DocumentCandidates
-            .Where(c => c.TenantId == tenantId)
+            .ApplyTenantScope(userContext)
             .ApplyFacilityScope(userContext)
             .Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
-            .Where(a => a.TenantId == tenantId && a.LlmExtractedFieldsJson != null
+            .ApplyTenantScope(userContext)
+            .Where(a => a.LlmExtractedFieldsJson != null
                      && visibleAssetIds.Contains(a.Id))
             .ToListAsync(cancellationToken);
 
         var sourceNames = await db.SourceObjects
-            .Where(s => s.TenantId == tenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(s => s.Id, s => s.Name, cancellationToken);
 
         var candidatesByAsset = await db.DocumentCandidates
-            .Where(c => c.TenantId == tenantId)
+            .ApplyTenantScope(userContext)
             .ToDictionaryAsync(c => c.DocumentAssetId, c => c.CandidateType, cancellationToken);
 
         var actions = new List<RenewalAction>();

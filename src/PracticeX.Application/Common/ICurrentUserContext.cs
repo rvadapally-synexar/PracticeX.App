@@ -32,6 +32,18 @@ public interface ICurrentUserContext
     bool IsOrgAdmin { get; }
 
     /// <summary>
+    /// Slice 21 Phase 2: super-admin "see everything" mode. Set when a
+    /// super-admin has not chosen a specific tenant via the org switcher
+    /// (X-Tenant-Override). In this mode read endpoints must drop their
+    /// <c>WHERE tenant_id = TenantId</c> predicate so the super-admin
+    /// gets a true cross-tenant aggregate (all facilities, all docs).
+    /// Writes still need a concrete tenant — write paths fall back to
+    /// <see cref="TenantId"/> (the home/platform tenant) and should
+    /// reject the operation when the super-admin hasn't picked one.
+    /// </summary>
+    bool IsCrossTenantView { get; }
+
+    /// <summary>
     /// Set of facility ids the user can read. <c>null</c> means
     /// "unrestricted within the tenant" (super-admin / org-admin); a set
     /// means strict facility-level scoping.
