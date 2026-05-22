@@ -12,6 +12,7 @@ import {
   Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type {
   DocumentCandidate,
   IngestionBatch,
@@ -46,22 +47,24 @@ export function SourceDiscoveryPage() {
   const [uploadOpen, setUploadOpen] = useState(false);
   const [activeBatch, setActiveBatch] = useState<IngestionBatchSummary | null>(null);
   const [actionInflight, setActionInflight] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const facilityFilter = searchParams.get('facility') ?? undefined;
 
   const refresh = useCallback(async () => {
     setState((s) => ({ ...s, loading: true, error: null }));
     try {
       const [connectors, connections, batches, candidates] = await Promise.all([
         sourcesApi.listConnectors(),
-        sourcesApi.listConnections(),
-        sourcesApi.listBatches(10),
-        sourcesApi.listCandidates({ limit: 25 }),
+        sourcesApi.listConnections(facilityFilter),
+        sourcesApi.listBatches(10, facilityFilter),
+        sourcesApi.listCandidates({ limit: 25, facilityId: facilityFilter }),
       ]);
       setState({ connectors, connections, batches, candidates, loading: false, error: null });
     } catch (err) {
       const message = err instanceof Error ? err.message : (err as { detail?: string }).detail ?? 'Unable to reach API';
       setState((s) => ({ ...s, loading: false, error: message }));
     }
-  }, []);
+  }, [facilityFilter]);
 
   useEffect(() => {
     void refresh();

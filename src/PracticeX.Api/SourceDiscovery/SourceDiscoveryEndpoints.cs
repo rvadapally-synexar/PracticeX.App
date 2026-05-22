@@ -75,10 +75,30 @@ public static class SourceDiscoveryEndpoints
     private static async Task<Ok<IReadOnlyCollection<SourceConnectionDto>>> ListConnections(
         PracticeXDbContext db,
         ICurrentUserContext userContext,
+        [FromQuery] Guid? facilityId,
         CancellationToken cancellationToken)
     {
-        var connections = await db.SourceConnections
-            .ApplyTenantScope(userContext)
+        // Slice 21.1: when a facility is selected, narrow to connections
+        // that produced any document tagged for that facility. We can't
+        // filter by source_connections.tenant_id because legacy rows
+        // (pre-Slice 21) all live in the platform tenant — the canonical
+        // facility tag lives on document_candidates.facility_hint_id.
+        var query = db.SourceConnections.ApplyTenantScope(userContext);
+        if (facilityId.HasValue)
+        {
+            var connectionIds = db.SourceObjects
+                .Join(db.DocumentAssets,
+                    so => so.Id, da => da.SourceObjectId,
+                    (so, da) => new { so.ConnectionId, AssetId = da.Id })
+                .Join(db.DocumentCandidates,
+                    x => x.AssetId, dc => dc.DocumentAssetId,
+                    (x, dc) => new { x.ConnectionId, dc.FacilityHintId })
+                .Where(x => x.FacilityHintId == facilityId.Value)
+                .Select(x => x.ConnectionId)
+                .Distinct();
+            query = query.Where(c => connectionIds.Contains(c.Id));
+        }
+        var connections = await query
             .OrderByDescending(c => c.CreatedAt)
             .Select(c => new SourceConnectionDto(
                 c.Id,
@@ -704,11 +724,29 @@ public static class SourceDiscoveryEndpoints
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         [FromQuery] int? limit,
+        [FromQuery] Guid? facilityId,
         CancellationToken cancellationToken)
     {
         var take = Math.Clamp(limit ?? 20, 1, 100);
-        var batches = await db.IngestionBatches
-            .ApplyTenantScope(userContext)
+        // Slice 21.1: when a facility is selected, narrow to batches that
+        // produced any document tagged for that facility. (Like with
+        // connections, ingestion_batches.tenant_id is legacy/platform-tagged;
+        // the real owning facility lives on document_candidates.)
+        var query = db.IngestionBatches.ApplyTenantScope(userContext);
+        if (facilityId.HasValue)
+        {
+            var batchIdsForFacility = db.IngestionJobs
+                .Where(j => j.DocumentAssetId != null)
+                .Join(db.DocumentCandidates,
+                    j => j.DocumentAssetId!.Value,
+                    c => c.DocumentAssetId,
+                    (j, c) => new { j.BatchId, c.FacilityHintId })
+                .Where(x => x.FacilityHintId == facilityId.Value)
+                .Select(x => x.BatchId)
+                .Distinct();
+            query = query.Where(b => batchIdsForFacility.Contains(b.Id));
+        }
+        var batches = await query
             .OrderByDescending(b => b.CreatedAt)
             .Take(take)
             .Select(b => new IngestionBatchDto(
@@ -862,6 +900,7 @@ public static class SourceDiscoveryEndpoints
         [FromQuery] string? status,
         [FromQuery] int? limit,
         [FromQuery] Guid? batchId,
+        [FromQuery] Guid? facilityId,
         CancellationToken cancellationToken)
     {
         var take = Math.Clamp(limit ?? 50, 1, 200);
@@ -869,6 +908,13 @@ public static class SourceDiscoveryEndpoints
         var query = db.DocumentCandidates
             .AsNoTracking()
             .ApplyTenantScope(userContext);
+
+        // Slice 21.1: document_candidates carry facility_hint_id directly,
+        // so we can filter precisely rather than via the facility's tenant.
+        if (facilityId.HasValue)
+        {
+            query = query.Where(c => c.FacilityHintId == facilityId.Value);
+        }
 
         if (!string.IsNullOrWhiteSpace(status))
         {

@@ -262,7 +262,8 @@ export interface SelectedManifestFile extends QueuedFile {
 
 export const sourcesApi = {
   listConnectors: () => request<ConnectorDescriptor[]>('/sources/connectors'),
-  listConnections: () => request<SourceConnection[]>('/sources/connections'),
+  listConnections: (facilityId?: string) =>
+    request<SourceConnection[]>(`/sources/connections${facilityId ? `?facilityId=${encodeURIComponent(facilityId)}` : ''}`),
   createConnection: (sourceType: string, displayName?: string) =>
     request<SourceConnection>('/sources/connections', {
       method: 'POST',
@@ -317,16 +318,21 @@ export const sourcesApi = {
       body: JSON.stringify({ top, since }),
     }),
 
-  listBatches: (limit = 20) => request<IngestionBatch[]>(`/sources/batches?limit=${limit}`),
+  listBatches: (limit = 20, facilityId?: string) => {
+    const params = new URLSearchParams({ limit: String(limit) });
+    if (facilityId) params.set('facilityId', facilityId);
+    return request<IngestionBatch[]>(`/sources/batches?${params}`);
+  },
   deleteBatch: (batchId: string) =>
     request<void>(`/sources/batches/${batchId}`, { method: 'DELETE' }),
   deleteAllBatches: () =>
     request<{ deletedCount: number }>(`/sources/batches`, { method: 'DELETE' }),
-  listCandidates: (params: { status?: string; batchId?: string; limit?: number } = {}) => {
+  listCandidates: (params: { status?: string; batchId?: string; limit?: number; facilityId?: string } = {}) => {
     const q = new URLSearchParams();
     if (params.status) q.append('status', params.status);
     if (params.batchId) q.append('batchId', params.batchId);
     if (params.limit) q.append('limit', String(params.limit));
+    if (params.facilityId) q.append('facilityId', params.facilityId);
     const suffix = q.toString();
     return request<DocumentCandidate[]>(`/sources/candidates${suffix ? `?${suffix}` : ''}`);
   },
