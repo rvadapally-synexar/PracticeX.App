@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Card, KpiCard } from '@practicex/design-system';
 import { analysisApi, type RenewalAction, type RenewalsResponse, readableFamily } from '../lib/api';
 import { MaintenancePage } from '../shell/MaintenanceMessage';
@@ -13,12 +13,14 @@ export function RenewalsPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [familyFilter, setFamilyFilter] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [searchParams] = useSearchParams();
+  const facilityFilter = searchParams.get('facility') ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await analysisApi.getRenewals();
+        const data = await analysisApi.getRenewals(facilityFilter);
         if (!cancelled) setState({ kind: 'ready', data });
       } catch {
         if (cancelled) return;
@@ -28,7 +30,7 @@ export function RenewalsPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, facilityFilter]);
 
   const filteredBuckets = useMemo(() => {
     if (state.kind !== 'ready') return [];

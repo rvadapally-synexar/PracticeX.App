@@ -77,9 +77,12 @@ export function AppShell() {
     let cancelled = false;
     (async () => {
       try {
+        // Slice 21.1: sidebar nav counts (documents, contracts, review-queue)
+        // narrow to the active facility so the nav reads consistently with
+        // the page content. Identity and the facility list stay global.
         const [u, s, f, t] = await Promise.all([
           analysisApi.getCurrentUser().catch(() => null),
-          analysisApi.getDashboard().catch(() => null),
+          analysisApi.getDashboard(activeFacility ?? undefined).catch(() => null),
           analysisApi.getFacilities().catch(() => []),
           analysisApi.getAccessibleTenants().catch(() => []),
         ]);
@@ -97,7 +100,7 @@ export function AppShell() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [activeFacility]);
 
   // Slice 21 Phase 2: super-admin org-switcher.
   const onTenantSwitch = (tenantId: string) => {

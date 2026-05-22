@@ -734,8 +734,11 @@ export interface LegalMemoStructured {
 }
 
 export const legalAdvisorApi = {
-  getPortfolio: () =>
-    request<LegalAdvisorPortfolio>(`/legal-advisor/portfolio?_t=${Date.now()}`),
+  getPortfolio: (facilityId?: string) => {
+    const params = new URLSearchParams({ _t: String(Date.now()) });
+    if (facilityId) params.set('facilityId', facilityId);
+    return request<LegalAdvisorPortfolio>(`/legal-advisor/portfolio?${params}`);
+  },
   getMemo: (assetId: string) =>
     request<LegalMemoResult>(`/legal-advisor/memos/${assetId}`),
   generateMemo: (assetId: string) =>
@@ -745,8 +748,11 @@ export const legalAdvisorApi = {
       `/legal-advisor/memos-batch${force ? '?force=true' : ''}`,
       { method: 'POST' },
     ),
-  getCounselBrief: () =>
-    request<CounselBrief>(`/legal-advisor/counsel-brief?_t=${Date.now()}`),
+  getCounselBrief: (facilityId?: string) => {
+    const params = new URLSearchParams({ _t: String(Date.now()) });
+    if (facilityId) params.set('facility', facilityId);
+    return request<CounselBrief>(`/legal-advisor/counsel-brief?${params}`);
+  },
   generateCounselBrief: () =>
     request<CounselBrief>('/legal-advisor/counsel-brief', { method: 'POST' }),
 };
@@ -765,13 +771,28 @@ export const LEGAL_ADVISOR_DISCLAIMER =
   'relationship. Engage licensed counsel before relying on any ' +
   'conclusion or taking action based on this output.';
 
+// Slice 21.1: all read endpoints that surface document-derived content
+// honor an optional facilityId so a super-admin viewing one facility in
+// the sidebar gets a clean, tenant-isolated view. The backend still
+// applies tenant + RBAC scope on top.
+function facilityQs(facilityId?: string, cacheBust = false): string {
+  const params = new URLSearchParams();
+  if (facilityId) params.set('facilityId', facilityId);
+  if (cacheBust) params.set('_t', String(Date.now()));
+  const s = params.toString();
+  return s ? `?${s}` : '';
+}
+
 export const analysisApi = {
   getPortfolio: (facilityId?: string) =>
-    request<Portfolio>(`/analysis/portfolio${facilityId ? `?facilityId=${encodeURIComponent(facilityId)}` : ''}`),
-  getInsights: () => request<PortfolioInsights>('/analysis/insights'),
+    request<Portfolio>(`/analysis/portfolio${facilityQs(facilityId)}`),
+  getInsights: (facilityId?: string) =>
+    request<PortfolioInsights>(`/analysis/insights${facilityQs(facilityId)}`),
   getDocument: (assetId: string) => request<DocumentDetail>(`/analysis/documents/${assetId}`),
-  getDashboard: () => request<DashboardStats>('/analysis/dashboard'),
-  getReviewQueue: () => request<ReviewQueueItem[]>('/analysis/review-queue'),
+  getDashboard: (facilityId?: string) =>
+    request<DashboardStats>(`/analysis/dashboard${facilityQs(facilityId)}`),
+  getReviewQueue: (facilityId?: string) =>
+    request<ReviewQueueItem[]>(`/analysis/review-queue${facilityQs(facilityId)}`),
   getCurrentUser: () => request<CurrentUser>('/analysis/me'),
   getAccessibleTenants: () => request<TenantSummary[]>('/analysis/tenants'),
   getFacilities: () => request<Facility[]>('/analysis/facilities'),
@@ -791,8 +812,10 @@ export const analysisApi = {
     const qs = facilityId ? `?facility=${encodeURIComponent(facilityId)}` : '';
     return request<PortfolioBrief>(`/analysis/portfolio-brief${qs}`, { method: 'POST' });
   },
-  getRenewals: () => request<RenewalsResponse>(`/analysis/renewals?_t=${Date.now()}`),
-  getEntityGraph: () => request<EntityGraph>(`/analysis/entity-graph?_t=${Date.now()}`),
+  getRenewals: (facilityId?: string) =>
+    request<RenewalsResponse>(`/analysis/renewals${facilityQs(facilityId, /*cacheBust*/ true)}`),
+  getEntityGraph: (facilityId?: string) =>
+    request<EntityGraph>(`/analysis/entity-graph${facilityQs(facilityId, /*cacheBust*/ true)}`),
 };
 
 export interface BatchExtractionResult {

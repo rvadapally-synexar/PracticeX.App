@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button, Card, KpiCard, StatusChip } from '@practicex/design-system';
@@ -28,18 +28,20 @@ export function LegalAdvisorPage() {
   const [brief, setBrief] = useState<CounselBrief | null>(null);
   const [briefLoading, setBriefLoading] = useState(false);
   const [briefError, setBriefError] = useState<string | null>(null);
+  const [searchParams] = useSearchParams();
+  const facilityFilter = searchParams.get('facility') ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const data = await legalAdvisorApi.getPortfolio();
+        const data = await legalAdvisorApi.getPortfolio(facilityFilter);
         if (!cancelled) setState({ kind: 'ready', data });
       } catch {
         if (!cancelled) setState({ kind: 'error' });
       }
       try {
-        const b = await legalAdvisorApi.getCounselBrief();
+        const b = await legalAdvisorApi.getCounselBrief(facilityFilter);
         if (!cancelled) setBrief(b);
       } catch {
         // 404 = brief not yet generated; harmless.
@@ -48,7 +50,7 @@ export function LegalAdvisorPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, facilityFilter]);
 
   if (state.kind === 'loading') {
     return (

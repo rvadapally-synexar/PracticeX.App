@@ -91,6 +91,7 @@ public static class AnalysisEndpoints
     }
 
     private static async Task<Ok<DashboardResponse>> GetDashboard(
+        Guid? facilityId,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
@@ -99,9 +100,16 @@ public static class AnalysisEndpoints
         // super-admin in cross-tenant view sees the cross-tenant rollup;
         // everyone else gets their tenant's slice. Facility scope still
         // applies on top for facility users.
+        // Slice 21.1: when the caller passes ?facilityId=, narrow further so a
+        // super-admin who picked a facility in the sidebar sees only that
+        // facility's rollup (and by extension only that facility's tenant).
         var visibleCandidates = db.DocumentCandidates
             .ApplyTenantScope(userContext)
             .ApplyFacilityScope(userContext);
+        if (facilityId.HasValue)
+        {
+            visibleCandidates = visibleCandidates.Where(c => c.FacilityHintId == facilityId.Value);
+        }
         var visibleAssetIds = visibleCandidates.Select(c => c.DocumentAssetId);
         var visibleAssets = db.DocumentAssets
             .ApplyTenantScope(userContext)
@@ -129,17 +137,24 @@ public static class AnalysisEndpoints
     }
 
     private static async Task<Ok<IReadOnlyList<ReviewQueueItem>>> GetReviewQueue(
+        Guid? facilityId,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
         // Slice 21 Phase 2: tenant scope via ApplyTenantScope; facility
         // scope on top for facility users.
-        var scopedCandidateIds = db.DocumentCandidates
+        // Slice 21.1: optional ?facilityId= narrows further when a super-admin
+        // is viewing a single facility's queue.
+        var scopedCandidatesBase = db.DocumentCandidates
             .ApplyTenantScope(userContext)
             .Where(c => c.Status == DocumentCandidateStatus.PendingReview)
-            .ApplyFacilityScope(userContext)
-            .Select(c => c.Id);
+            .ApplyFacilityScope(userContext);
+        if (facilityId.HasValue)
+        {
+            scopedCandidatesBase = scopedCandidatesBase.Where(c => c.FacilityHintId == facilityId.Value);
+        }
+        var scopedCandidateIds = scopedCandidatesBase.Select(c => c.Id);
         var candidateBase = db.DocumentCandidates.ApplyTenantScope(userContext);
         var rows = await (
             from c in candidateBase
@@ -581,6 +596,7 @@ public static class AnalysisEndpoints
     }
 
     private static async Task<Ok<CrossDocumentInsights>> GetCrossDocumentInsights(
+        Guid? facilityId,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
@@ -592,10 +608,18 @@ public static class AnalysisEndpoints
         // a Parag-scoped user must not see Synexar landlords/tenants/etc
         // mingled into their insights view. Slice 21 Phase 2: super-admin
         // in cross-tenant view sees insights aggregated across tenants.
-        var visibleAssetIds = db.DocumentCandidates
+        // Slice 21.1: when the caller passes ?facilityId=, narrow further so a
+        // super-admin who picked a single facility in the sidebar gets only
+        // that facility's landlords / tenants / addresses — no cross-tenant
+        // leak through the insights panel.
+        var visibleCandidates = db.DocumentCandidates
             .ApplyTenantScope(userContext)
-            .ApplyFacilityScope(userContext)
-            .Select(c => c.DocumentAssetId);
+            .ApplyFacilityScope(userContext);
+        if (facilityId.HasValue)
+        {
+            visibleCandidates = visibleCandidates.Where(c => c.FacilityHintId == facilityId.Value);
+        }
+        var visibleAssetIds = visibleCandidates.Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
             .ApplyTenantScope(userContext)
             .Where(a => (a.LlmExtractedFieldsJson != null || a.ExtractedFieldsJson != null) &&

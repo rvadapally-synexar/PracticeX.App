@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Card, ConfidenceBar, StatusChip } from '@practicex/design-system';
 import {
   analysisApi,
@@ -17,12 +17,14 @@ type LoadState =
 export function ReviewQueuePage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
+  const [searchParams] = useSearchParams();
+  const facilityFilter = searchParams.get('facility') ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const items = await analysisApi.getReviewQueue();
+        const items = await analysisApi.getReviewQueue(facilityFilter);
         if (!cancelled) setState({ kind: 'ready', items });
       } catch {
         if (cancelled) return;
@@ -32,7 +34,7 @@ export function ReviewQueuePage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, facilityFilter]);
 
   if (state.kind === 'loading') {
     return <div className="page"><div className="page-subtitle">Loading review queue…</div></div>;

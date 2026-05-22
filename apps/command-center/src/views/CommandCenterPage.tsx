@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { Button, Card, KpiCard } from '@practicex/design-system';
 import { analysisApi, type DashboardStats, type Portfolio, type RenewalsResponse } from '../lib/api';
 import { MaintenancePage } from '../shell/MaintenanceMessage';
@@ -12,15 +12,17 @@ type LoadState =
 export function CommandCenterPage() {
   const [state, setState] = useState<LoadState>({ kind: 'loading' });
   const [reloadKey, setReloadKey] = useState(0);
+  const [searchParams] = useSearchParams();
+  const facilityFilter = searchParams.get('facility') ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
         const [stats, portfolio, renewals] = await Promise.all([
-          analysisApi.getDashboard(),
-          analysisApi.getPortfolio(),
-          analysisApi.getRenewals().catch(() => null),
+          analysisApi.getDashboard(facilityFilter),
+          analysisApi.getPortfolio(facilityFilter),
+          analysisApi.getRenewals(facilityFilter).catch(() => null),
         ]);
         if (!cancelled) setState({ kind: 'ready', stats, portfolio, renewals });
       } catch {
@@ -31,7 +33,7 @@ export function CommandCenterPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, facilityFilter]);
 
   if (state.kind === 'loading') {
     return <div className="page"><div className="page-subtitle">Loading…</div></div>;

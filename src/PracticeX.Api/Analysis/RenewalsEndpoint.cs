@@ -26,6 +26,7 @@ public static class RenewalsEndpoint
     }
 
     private static async Task<Ok<RenewalsResponse>> GetRenewals(
+        Guid? facilityId,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
@@ -34,10 +35,16 @@ public static class RenewalsEndpoint
 
         // Slice 21 RBAC: renewals reflect facility scope. Phase 2:
         // tenant scope respects super-admin cross-tenant view.
-        var visibleAssetIds = db.DocumentCandidates
+        // Slice 21.1: ?facilityId= narrows to a single facility's renewals so
+        // super-admin viewing Synexar doesn't see Eagle's lease deadlines.
+        var visibleCandidates = db.DocumentCandidates
             .ApplyTenantScope(userContext)
-            .ApplyFacilityScope(userContext)
-            .Select(c => c.DocumentAssetId);
+            .ApplyFacilityScope(userContext);
+        if (facilityId.HasValue)
+        {
+            visibleCandidates = visibleCandidates.Where(c => c.FacilityHintId == facilityId.Value);
+        }
+        var visibleAssetIds = visibleCandidates.Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
             .ApplyTenantScope(userContext)
             .Where(a => a.LlmExtractedFieldsJson != null

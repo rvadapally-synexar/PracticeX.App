@@ -474,16 +474,23 @@ public static class LegalAdvisorEndpoint
     // ------------------------------------------------------------------
 
     private static async Task<Ok<LegalAdvisorPortfolioResponse>> GetMemoPortfolio(
+        Guid? facilityId,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
         // Slice 21 RBAC: portfolio rows reflect facility scope. Phase 2:
         // tenant scope respects super-admin cross-tenant view.
-        var visibleAssetIds = db.DocumentCandidates
+        // Slice 21.1: ?facilityId= narrows the memo list to a single facility
+        // — super-admin viewing Synexar must not see Eagle memos.
+        var visibleCandidates = db.DocumentCandidates
             .ApplyTenantScope(userContext)
-            .ApplyFacilityScope(userContext)
-            .Select(c => c.DocumentAssetId);
+            .ApplyFacilityScope(userContext);
+        if (facilityId.HasValue)
+        {
+            visibleCandidates = visibleCandidates.Where(c => c.FacilityHintId == facilityId.Value);
+        }
+        var visibleAssetIds = visibleCandidates.Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
             .ApplyTenantScope(userContext)
             .Where(a => visibleAssetIds.Contains(a.Id))
@@ -708,6 +715,7 @@ public static class LegalAdvisorEndpoint
     }
 
     private static async Task<Results<Ok<CounselBriefResponse>, NotFound>> GetCounselBrief(
+        Guid? facility,
         HttpContext httpContext,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
@@ -716,15 +724,28 @@ public static class LegalAdvisorEndpoint
         // (Phase 2: tenant split has shipped, so the per-tenant counsel
         // brief is naturally scoped — facility users in their own tenant
         // see only their org's brief.) For super-admin cross-tenant view
-        // the brief is per-tenant — return NotFound rather than silently
-        // showing the platform tenant's (empty) brief; the UI surfaces a
-        // "pick a tenant first" affordance.
+        // we'd normally NotFound — but Slice 21.1: if the caller picked a
+        // facility in the sidebar, derive its tenant and surface that
+        // tenant's brief. Counsel briefs are tenant-scoped (no per-facility
+        // synthesis yet), so two facilities under the same tenant resolve
+        // to the same brief — acceptable since the brief is whole-org.
+        Guid effectiveTenantId;
         if (userContext.IsCrossTenantView)
         {
-            return TypedResults.NotFound();
+            if (!facility.HasValue) return TypedResults.NotFound();
+            var derivedTenant = await db.Facilities
+                .Where(f => f.Id == facility.Value)
+                .Select(f => (Guid?)f.TenantId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (derivedTenant is null) return TypedResults.NotFound();
+            effectiveTenantId = derivedTenant.Value;
+        }
+        else
+        {
+            effectiveTenantId = userContext.TenantId;
         }
         var brief = await db.CounselBriefs
-            .FirstOrDefaultAsync(b => b.TenantId == userContext.TenantId, cancellationToken);
+            .FirstOrDefaultAsync(b => b.TenantId == effectiveTenantId, cancellationToken);
         if (brief is null) return TypedResults.NotFound();
         httpContext.Response.Headers["Cache-Control"] = "no-store, no-cache, must-revalidate";
         return TypedResults.Ok(new CounselBriefResponse(

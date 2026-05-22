@@ -25,16 +25,23 @@ public static class EntityGraphEndpoint
     }
 
     private static async Task<Ok<EntityGraphResponse>> GetEntityGraph(
+        Guid? facilityId,
         PracticeXDbContext db,
         ICurrentUserContext userContext,
         CancellationToken cancellationToken)
     {
         // Slice 21 RBAC: graph nodes/edges respect facility scope.
         // Phase 2: tenant scope respects super-admin cross-tenant view.
-        var visibleAssetIds = db.DocumentCandidates
+        // Slice 21.1: ?facilityId= narrows the graph to a single facility's
+        // entities — keeps Eagle's people out of Synexar's view.
+        var visibleCandidates = db.DocumentCandidates
             .ApplyTenantScope(userContext)
-            .ApplyFacilityScope(userContext)
-            .Select(c => c.DocumentAssetId);
+            .ApplyFacilityScope(userContext);
+        if (facilityId.HasValue)
+        {
+            visibleCandidates = visibleCandidates.Where(c => c.FacilityHintId == facilityId.Value);
+        }
+        var visibleAssetIds = visibleCandidates.Select(c => c.DocumentAssetId);
         var assets = await db.DocumentAssets
             .ApplyTenantScope(userContext)
             .Where(a => a.LlmExtractedFieldsJson != null

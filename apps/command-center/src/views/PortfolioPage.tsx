@@ -47,7 +47,7 @@ export function PortfolioPage() {
       try {
         const [portfolio, insights] = await Promise.all([
           analysisApi.getPortfolio(facilityFilter ?? undefined),
-          analysisApi.getInsights(),
+          analysisApi.getInsights(facilityFilter ?? undefined),
         ]);
         if (cancelled) return;
         if (portfolio.totalDocuments === 0) {
@@ -134,7 +134,7 @@ export function PortfolioPage() {
           onCompleted={async () => {
             const [p, i] = await Promise.all([
               analysisApi.getPortfolio(facilityFilter ?? undefined),
-              analysisApi.getInsights(),
+              analysisApi.getInsights(facilityFilter ?? undefined),
             ]);
             setState({ kind: 'ready', portfolio: p, insights: i });
           }}

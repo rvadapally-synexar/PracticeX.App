@@ -62,16 +62,31 @@ public static class PortfolioBriefEndpoint
         }
 
         // Slice 21 Phase 2: portfolio briefs are written per-tenant. In
-        // cross-tenant view we don't have a single home tenant for the
-        // brief lookup — the UI shows a "pick an organization" affordance
-        // when this 404s, which is the right ask.
+        // cross-tenant view we don't have a single home tenant — but if
+        // the caller picked a concrete facility we can derive its tenant
+        // from org.facilities and look up the brief by (facility's tenant,
+        // facility). This is what lets a super-admin pick "Synexar Inc" in
+        // the facility sidebar and see Synexar's brief without first
+        // switching the org switcher. Falling back to NotFound when no
+        // facility is picked surfaces the "pick an organization" CTA.
+        Guid effectiveTenantId;
         if (userContext.IsCrossTenantView)
         {
-            return TypedResults.NotFound();
+            if (facilityKey == PortfolioBrief.AllFacilities) return TypedResults.NotFound();
+            var derivedTenant = await db.Facilities
+                .Where(f => f.Id == facilityKey)
+                .Select(f => (Guid?)f.TenantId)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (derivedTenant is null) return TypedResults.NotFound();
+            effectiveTenantId = derivedTenant.Value;
+        }
+        else
+        {
+            effectiveTenantId = userContext.TenantId;
         }
 
         var brief = await db.PortfolioBriefs
-            .FirstOrDefaultAsync(b => b.TenantId == userContext.TenantId
+            .FirstOrDefaultAsync(b => b.TenantId == effectiveTenantId
                                    && b.FacilityId == facilityKey, cancellationToken);
         if (brief is null) return TypedResults.NotFound();
         // Defensive: iPad Safari was caching transient error responses for

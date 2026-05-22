@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Card } from '@practicex/design-system';
 import { DataSet } from 'vis-data/peer';
 import { Network, type Options } from 'vis-network/peer';
@@ -37,12 +37,14 @@ export function EntityGraphPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<Network | null>(null);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const facilityFilter = searchParams.get('facility') ?? undefined;
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const graph = await analysisApi.getEntityGraph();
+        const graph = await analysisApi.getEntityGraph(facilityFilter);
         if (!cancelled) setState({ kind: 'ready', graph });
       } catch {
         if (cancelled) return;
@@ -52,7 +54,7 @@ export function EntityGraphPage() {
     return () => {
       cancelled = true;
     };
-  }, [reloadKey]);
+  }, [reloadKey, facilityFilter]);
 
   const filtered = useMemo(() => {
     if (state.kind !== 'ready') return null;
