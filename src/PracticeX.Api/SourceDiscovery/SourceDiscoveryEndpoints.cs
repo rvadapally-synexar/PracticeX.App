@@ -78,25 +78,37 @@ public static class SourceDiscoveryEndpoints
         [FromQuery] Guid? facilityId,
         CancellationToken cancellationToken)
     {
-        // Slice 21.1: when a facility is selected, narrow to connections
-        // that produced any document tagged for that facility. We can't
-        // filter by source_connections.tenant_id because legacy rows
-        // (pre-Slice 21) all live in the platform tenant — the canonical
-        // facility tag lives on document_candidates.facility_hint_id.
-        var query = db.SourceConnections.ApplyTenantScope(userContext);
-        if (facilityId.HasValue)
+        // Slice 21.1: scope via the documents the connection produced, not
+        // via source_connections.tenant_id. Reason: all pre-Slice-21 rows
+        // live in the platform tenant, so a strict tenant_id filter returns
+        // 0 connections when a real tenant is in scope. The canonical
+        // tenant + facility tags live on document_candidates, so we join
+        // through them.
+        IQueryable<SourceConnection> query;
+        if (userContext.IsCrossTenantView)
         {
+            // Super-admin "all organizations" view — show everything.
+            query = db.SourceConnections;
+        }
+        else
+        {
+            // A real tenant (or super-admin with override) is in scope.
+            // Pull visible candidate set, then map back to producing
+            // connections via source_object → document_asset → candidate.
+            var visibleCandidates = db.DocumentCandidates.ApplyTenantScope(userContext);
+            if (facilityId.HasValue)
+            {
+                visibleCandidates = visibleCandidates.Where(c => c.FacilityHintId == facilityId.Value);
+            }
             var connectionIds = db.SourceObjects
                 .Join(db.DocumentAssets,
                     so => so.Id, da => da.SourceObjectId,
                     (so, da) => new { so.ConnectionId, AssetId = da.Id })
-                .Join(db.DocumentCandidates,
+                .Join(visibleCandidates,
                     x => x.AssetId, dc => dc.DocumentAssetId,
-                    (x, dc) => new { x.ConnectionId, dc.FacilityHintId })
-                .Where(x => x.FacilityHintId == facilityId.Value)
-                .Select(x => x.ConnectionId)
+                    (x, dc) => x.ConnectionId)
                 .Distinct();
-            query = query.Where(c => connectionIds.Contains(c.Id));
+            query = db.SourceConnections.Where(c => connectionIds.Contains(c.Id));
         }
         var connections = await query
             .OrderByDescending(c => c.CreatedAt)
@@ -728,23 +740,29 @@ public static class SourceDiscoveryEndpoints
         CancellationToken cancellationToken)
     {
         var take = Math.Clamp(limit ?? 20, 1, 100);
-        // Slice 21.1: when a facility is selected, narrow to batches that
-        // produced any document tagged for that facility. (Like with
-        // connections, ingestion_batches.tenant_id is legacy/platform-tagged;
-        // the real owning facility lives on document_candidates.)
-        var query = db.IngestionBatches.ApplyTenantScope(userContext);
-        if (facilityId.HasValue)
+        // Slice 21.1: scope via produced documents (same reasoning as
+        // ListConnections — legacy rows are platform-tenant, real scope
+        // lives on document_candidates).
+        IQueryable<IngestionBatch> query;
+        if (userContext.IsCrossTenantView)
         {
-            var batchIdsForFacility = db.IngestionJobs
+            query = db.IngestionBatches;
+        }
+        else
+        {
+            var visibleCandidates = db.DocumentCandidates.ApplyTenantScope(userContext);
+            if (facilityId.HasValue)
+            {
+                visibleCandidates = visibleCandidates.Where(c => c.FacilityHintId == facilityId.Value);
+            }
+            var batchIdsInScope = db.IngestionJobs
                 .Where(j => j.DocumentAssetId != null)
-                .Join(db.DocumentCandidates,
+                .Join(visibleCandidates,
                     j => j.DocumentAssetId!.Value,
                     c => c.DocumentAssetId,
-                    (j, c) => new { j.BatchId, c.FacilityHintId })
-                .Where(x => x.FacilityHintId == facilityId.Value)
-                .Select(x => x.BatchId)
+                    (j, c) => j.BatchId)
                 .Distinct();
-            query = query.Where(b => batchIdsForFacility.Contains(b.Id));
+            query = db.IngestionBatches.Where(b => batchIdsInScope.Contains(b.Id));
         }
         var batches = await query
             .OrderByDescending(b => b.CreatedAt)

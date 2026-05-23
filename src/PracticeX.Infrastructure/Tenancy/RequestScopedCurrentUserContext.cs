@@ -88,18 +88,45 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
             user = _db.Users
                 .AsNoTracking()
                 .FirstOrDefault(u => u.Email == email && u.Status == "active");
+
+            if (user is null)
+            {
+                // Cloudflare Access authenticated someone, but we have not
+                // provisioned that principal in org.users. Fail closed: no
+                // tenant/facility data, no cross-tenant view. The demo
+                // super-admin fallback is only for local dev where there is
+                // no authenticated email header at all.
+                return new ResolvedUser(DemoTenantId, DemoUserId, IsSuperAdmin: false, IsOrgAdmin: false, IsCrossTenantView: false, new HashSet<Guid>());
+            }
         }
 
         // Demo fallback: pre-auth local dev. Resolve to the seeded super-admin.
-        user ??= _db.Users.AsNoTracking().FirstOrDefault(u => u.Id == DemoUserId);
+        if (user is null)
+        {
+            user = _db.Users.AsNoTracking().FirstOrDefault(u => u.Id == DemoUserId);
+        }
 
         if (user is null)
         {
-            // Last resort — pre-seed scenario. Behave as a stub super-admin
-            // pointing at the demo tenant so endpoints don't NPE; production
-            // traffic should never hit this branch. Cross-tenant view is
-            // ON because there's no concrete tenant override.
-            return new ResolvedUser(DemoTenantId, DemoUserId, IsSuperAdmin: true, IsOrgAdmin: false, IsCrossTenantView: true, null);
+            // Last resort — pre-seed scenario, or production traffic where
+            // the upstream Access app strips the email header (service-token
+            // auth chains: app.practicex.ai → Pages Function → service-token →
+            // api.practicex.ai; the second Access app sets the email to
+            // empty because service tokens have no associated user, so the
+            // API can never resolve the OTP user behind the browser). Behave
+            // as a stub super-admin AND honor X-Tenant-Override so the org
+            // switcher in the topbar actually scopes the response. Without
+            // honoring the override here, picking "Synexar Inc" in the
+            // dropdown looks like it did nothing — the page still shows
+            // cross-tenant data.
+            var (lastResortTenant, lastResortOverride) = ResolveTenantOverride(DemoTenantId);
+            return new ResolvedUser(
+                lastResortTenant,
+                DemoUserId,
+                IsSuperAdmin: true,
+                IsOrgAdmin: false,
+                IsCrossTenantView: !lastResortOverride,
+                null);
         }
 
         if (user.IsSuperAdmin)
