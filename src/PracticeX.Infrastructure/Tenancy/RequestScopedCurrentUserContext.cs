@@ -42,7 +42,15 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
     // Slice 21 Phase 2 (renumber): match the post-renumber ids — see
     // DemoCurrentUserContext for the rationale + the renumber migration
     // for the full old→new map.
-    private static readonly Guid DemoTenantId = new("02b32f45-2ad4-4aa3-865a-6150d8fd3f98");
+    //
+    // Slice 21.1 fix: DemoTenantId now points at the real Platform tenant
+    // (11111111-...). The old 02b32f45-... value was a stale pre-renumber id
+    // that doesn't exist in org.tenants, so any write that landed under it
+    // (audit_events, etc.) blew up with a FK violation. Every browser request
+    // hits the last-resort branch in Resolve() because the upstream Access
+    // chain strips Cf-Access-Authenticated-User-Email; pointing the fallback
+    // tenant at a real row lets writes like /api/analytics/event succeed.
+    private static readonly Guid DemoTenantId = new("11111111-1111-1111-1111-111111111111");
     private static readonly Guid DemoUserId = new("ed785f04-c5a8-4539-ae4c-2f41ed002477");
 
     private readonly IHttpContextAccessor _httpContextAccessor;
