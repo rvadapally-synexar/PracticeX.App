@@ -88,6 +88,21 @@ public static class PortfolioBriefEndpoint
         var brief = await db.PortfolioBriefs
             .FirstOrDefaultAsync(b => b.TenantId == effectiveTenantId
                                    && b.FacilityId == facilityKey, cancellationToken);
+        // Slice 21.1: when the caller didn't ask for a specific facility
+        // (facilityKey == AllFacilities sentinel) and we don't yet have a
+        // tenant-wide brief, fall back to any per-facility brief that
+        // already exists for this tenant — most-recent first. Lets a
+        // super-admin who just flips the org-switcher to "Synexar Inc"
+        // see Synexar's existing facility-scoped brief without first
+        // having to click the facility pill. When the caller DID ask for
+        // a specific facility, no fallback — that's a real miss.
+        if (brief is null && facilityKey == PortfolioBrief.AllFacilities)
+        {
+            brief = await db.PortfolioBriefs
+                .Where(b => b.TenantId == effectiveTenantId)
+                .OrderByDescending(b => b.GeneratedAt)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
         if (brief is null) return TypedResults.NotFound();
         // Defensive: iPad Safari was caching transient error responses for
         // this URL. Tell every layer not to.
