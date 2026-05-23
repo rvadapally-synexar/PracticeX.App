@@ -197,7 +197,17 @@ public sealed class RequestScopedCurrentUserContext : ICurrentUserContext
     {
         var ctx = _httpContextAccessor.HttpContext;
         if (ctx is null) return (homeTenantId, false);
+        // Prefer the X-Tenant-Override header when present (legacy + server-
+        // to-server callers), but ALSO accept the override as a ?tenantOverride=
+        // query parameter. The frontend now sends the override via query
+        // string because the custom header triggered a CORS preflight that
+        // Cloudflare Access rejected at the edge, blocking every API call
+        // for super-admins who picked an org in the switcher.
         var raw = HeaderValue(ctx, TenantOverrideHeader);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            raw = ctx.Request.Query["tenantOverride"].ToString();
+        }
         if (string.IsNullOrWhiteSpace(raw)) return (homeTenantId, false);
         if (!Guid.TryParse(raw, out var requested)) return (homeTenantId, false);
         var exists = _db.Tenants.AsNoTracking().Any(t => t.Id == requested);

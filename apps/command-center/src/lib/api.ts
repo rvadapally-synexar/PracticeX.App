@@ -67,12 +67,24 @@ export function setTenantOverride(tenantId: string | null): void {
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let res: Response;
   const tenantOverride = getTenantOverride();
+  // Append tenant override as a query parameter rather than a custom
+  // header. The X-Tenant-Override header was a "non-simple" CORS header
+  // that forced the browser to issue an OPTIONS preflight, which
+  // Cloudflare Access (which gates app.practicex.ai) rejected at the
+  // edge with a 400 before our Pages Function ever ran. The browser
+  // then blocked the actual GET with TypeError: Failed to fetch — which
+  // the React app caught as a generic network error and rendered as
+  // the "Stay tuned — good things coming" maintenance card. Query
+  // parameters don't trigger preflight.
+  let finalPath = path;
+  if (tenantOverride) {
+    finalPath += (path.includes('?') ? '&' : '?') + 'tenantOverride=' + encodeURIComponent(tenantOverride);
+  }
   try {
-    res = await fetch(`${API_BASE}${path}`, {
+    res = await fetch(`${API_BASE}${finalPath}`, {
       headers: {
         Accept: 'application/json',
         ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-        ...(tenantOverride ? { 'X-Tenant-Override': tenantOverride } : {}),
         ...(init.headers ?? {}),
       },
       // Must be 'include' — Cloudflare Access redirects unauthenticated

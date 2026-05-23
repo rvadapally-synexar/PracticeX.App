@@ -27,6 +27,34 @@ export const onRequest: PagesFunction<ProxyEnv> = async ({ request, env }) => {
     return new Response('Not found', { status: 404 });
   }
 
+  // Short-circuit CORS preflight (OPTIONS) requests. The React app sends
+  // X-Tenant-Override on every API call when the super-admin org-switcher
+  // is set; that custom header makes the browser issue a preflight before
+  // the actual GET. Forwarding the OPTIONS upstream is pointless — the API
+  // doesn't have an OPTIONS handler, and Cloudflare Access intercepts
+  // anyway and 302s to the OTP login (preflights have no credentials).
+  // The browser then sees a 3xx on the preflight and blocks the real
+  // fetch with "TypeError: Failed to fetch", which the React app catches
+  // as a generic network error (no status) and renders as the "Stay tuned"
+  // maintenance card. Respond to the preflight ourselves with a 204 + the
+  // headers the browser is asking permission to send.
+  if (request.method === 'OPTIONS') {
+    const reqOrigin = request.headers.get('origin') ?? '';
+    const reqHeaders = request.headers.get('access-control-request-headers') ?? '';
+    return new Response(null, {
+      status: 204,
+      headers: {
+        'Access-Control-Allow-Origin': reqOrigin,
+        'Access-Control-Allow-Credentials': 'true',
+        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, PATCH, OPTIONS',
+        'Access-Control-Allow-Headers':
+          reqHeaders || 'content-type, accept, x-tenant-override, x-impersonate-email',
+        'Access-Control-Max-Age': '86400',
+        'Vary': 'origin, access-control-request-headers',
+      },
+    });
+  }
+
   const upstream = `https://api.practicex.ai${url.pathname}${url.search}`;
 
   const headers = new Headers(request.headers);
@@ -85,6 +113,8 @@ export const onRequest: PagesFunction<ProxyEnv> = async ({ request, env }) => {
   if (reqOrigin) {
     respHeaders.set('access-control-allow-origin', reqOrigin);
     respHeaders.set('access-control-allow-credentials', 'true');
+    respHeaders.set('access-control-allow-headers',
+      'content-type, accept, x-tenant-override, x-impersonate-email');
     respHeaders.set('vary', 'origin');
   }
 
