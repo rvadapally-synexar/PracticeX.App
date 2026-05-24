@@ -133,6 +133,16 @@ export const onRequest: PagesFunction<ProxyEnv> = async ({ request, env }) => {
   if (shouldBuffer) {
     const buf = await response.arrayBuffer();
     respHeaders.set('content-length', String(buf.byteLength));
+    // CRITICAL: response.arrayBuffer() returns ALREADY-DECOMPRESSED bytes
+    // because the Fetch API transparently handles content-encoding. If we
+    // re-emit the buffer while keeping the original Content-Encoding: gzip
+    // header, the browser tries to decompress decompressed bytes → fails.
+    // On iPad Chrome 148 this surfaces as TypeError: Load failed; desktop
+    // browsers happen to be more forgiving but it's still wrong everywhere.
+    // Strip the encoding-related headers so the buffered body is delivered
+    // as the plain bytes it actually is.
+    respHeaders.delete('content-encoding');
+    respHeaders.delete('transfer-encoding');
     return new Response(buf, {
       status: response.status,
       statusText: response.statusText,

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brief Fetch Debug v4 - isolate query-string trigger</title>
+  <style>
+    body { font-family: -apple-system, monospace; padding: 16px; line-height: 1.4; font-size: 13px; }
+    pre { background: #f4f4f4; padding: 10px; white-space: pre-wrap; word-break: break-all; font-size: 11px; }
+    .ok { color: green; font-weight: bold; }
+    .err { color: red; font-weight: bold; }
+    h3 { margin: 10px 0 2px; }
+    button { padding: 10px 20px; font-size: 16px; margin: 8px 0; }
+  </style>
+</head>
+<body>
+  <h2>Diagnostic v4 — what about the query string breaks fetch?</h2>
+  <p>All tests are <b>bare fetch to <code>/api/system/info</code></b>, varying only the query string.</p>
+  <button onclick="runAll()">Re-run</button>
+  <div id="out"></div>
+  <script>
+    const out = document.getElementById('out');
+    const log = (h) => out.insertAdjacentHTML('beforeend', h);
+
+    async function test(label, url) {
+      const start = Date.now();
+      try {
+        const r = await fetch(url);
+        const ms = Date.now() - start;
+        let bodyLen = -1;
+        try { bodyLen = (await r.text()).length; } catch (e) {}
+        log('<h3 class="ok">[' + label + '] ' + r.status + ' in ' + ms + 'ms — body ' + bodyLen + ' chars</h3><pre>' + url + '</pre>');
+      } catch (e) {
+        const ms = Date.now() - start;
+        log('<h3 class="err">[' + label + '] THROWN ' + ms + 'ms — ' + e.message + '</h3><pre>' + url + '</pre>');
+      }
+    }
+
+    async function runAll() {
+      out.innerHTML = '';
+      log('<pre>UA: ' + navigator.userAgent + '</pre>');
+
+      // CONTROL: known to work
+      await test('1: no query (control, known to work)',
+        '/api/system/info');
+
+      // Short, neutral query
+      await test('2: ?foo=1 (short, neutral key name)',
+        '/api/system/info?foo=1');
+
+      // Short query, key is "tenantOverride"
+      await test('3: ?tenantOverride=X (short value)',
+        '/api/system/info?tenantOverride=X');
+
+      // Long UUID value but key is something neutral
+      await test('4: ?foo=51111111-1111-1111-1111-111111111111 (UUID under neutral key)',
+        '/api/system/info?foo=51111111-1111-1111-1111-111111111111');
+
+      // Full real-world override
+      await test('5: ?tenantOverride=51111111-...-111 (the failing combo)',
+        '/api/system/info?tenantOverride=51111111-1111-1111-1111-111111111111');
+
+      // Cache buster only
+      await test('6: ?_t=123 (cache-buster only)',
+        '/api/system/info?_t=123');
+
+      // Two params
+      await test('7: ?_t=123&foo=bar (two short neutral params)',
+        '/api/system/info?_t=123&foo=bar');
+
+      // Use a different endpoint to confirm it's a query-string thing
+      await test('8: /api/analysis/me NO query (control for other endpoint)',
+        '/api/analysis/me');
+
+      log('<p><b>Done.</b> Tells us exactly whether it is: (a) any query string, (b) the keyword "tenantOverride", (c) the UUID length, or (d) something else.</p>');
+    }
+
+    runAll();
+  </script>
+</body>
+</html>

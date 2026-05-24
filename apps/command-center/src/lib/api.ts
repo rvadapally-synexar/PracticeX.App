@@ -71,30 +71,42 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   // header. The X-Tenant-Override header was a "non-simple" CORS header
   // that forced the browser to issue an OPTIONS preflight, which
   // Cloudflare Access (which gates app.practicex.ai) rejected at the
-  // edge with a 400 before our Pages Function ever ran. The browser
-  // then blocked the actual GET with TypeError: Failed to fetch — which
-  // the React app caught as a generic network error and rendered as
-  // the "Stay tuned — good things coming" maintenance card. Query
+  // edge with a 400 before our Pages Function ever ran. Query
   // parameters don't trigger preflight.
   let finalPath = path;
   if (tenantOverride) {
     finalPath += (path.includes('?') ? '&' : '?') + 'tenantOverride=' + encodeURIComponent(tenantOverride);
   }
+  // iOS Chrome 148 (CriOS) WebKit bug: passing ANY init object to fetch()
+  // for same-origin requests throws TypeError: Load failed before the
+  // request leaves the device — even when init only sets the default
+  // credentials value. Verified via in-browser diagnostic at /brief-debug
+  // on the user's iPad: `fetch('/api/system/info')` returns 200; same call
+  // as `fetch('/api/system/info', { credentials: 'same-origin' })` throws.
+  // For simple GETs with no body and no caller-supplied headers/method,
+  // drop the init entirely so the browser uses pure defaults. Cookies
+  // are still sent automatically for same-origin requests; the Pages
+  // Function adds the service-token auth headers downstream regardless.
+  const isSimpleGet =
+    (!init.method || init.method === 'GET') &&
+    init.body === undefined &&
+    !init.headers;
   try {
-    res = await fetch(`${API_BASE}${finalPath}`, {
-      headers: {
-        Accept: 'application/json',
-        ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
-        ...(init.headers ?? {}),
-      },
-      // Must be 'include' — Cloudflare Access redirects unauthenticated
-      // requests cross-origin to truwit.cloudflareaccess.com/login. 'include'
-      // is the only mode where the browser carries cookies through that
-      // redirect so re-auth can complete; 'same-origin' breaks the OAuth
-      // flow and produces CORS errors on every call.
-      credentials: 'include',
-      ...init,
-    });
+    if (isSimpleGet) {
+      res = await fetch(`${API_BASE}${finalPath}`);
+    } else {
+      res = await fetch(`${API_BASE}${finalPath}`, {
+        headers: {
+          Accept: 'application/json',
+          ...(init.body && !(init.body instanceof FormData) ? { 'Content-Type': 'application/json' } : {}),
+          ...(init.headers ?? {}),
+        },
+        // Cross-origin paths (POST with body etc.) still need 'include'
+        // for Cloudflare Access redirect cookie carrying.
+        credentials: 'include',
+        ...init,
+      });
+    }
   } catch (err) {
     // iOS Safari rejects the credentialed cross-origin redirect Cloudflare
     // Access uses when the session has expired (or been invalidated by
@@ -819,12 +831,34 @@ export const analysisApi = {
   llmExtractBatch: (force = false) =>
     request<BatchExtractionResult>(`/analysis/llm-extract-batch${force ? '?force=true' : ''}`, { method: 'POST' }),
   getPortfolioBrief: (facilityId?: string) => {
-    // Cache-buster: iPad Safari ITP / mobile WebKit was returning stuck
-    // "Load failed" on this endpoint after earlier transient errors. Adding
-    // a per-call timestamp guarantees a fresh URL on every fetch.
+    // iPad Chrome 148 (CriOS) / iOS WebKit fails fetch() with "TypeError:
+    // Load failed" specifically for this endpoint regardless of any
+    // header/credential combination we try. Confirmed reproducible in
+    // production iPad Chrome. Switching to XMLHttpRequest as the
+    // transport works around the WebKit-specific fetch bug; same wire
+    // protocol, same cookies, same response.
+    const tenantOverride = getTenantOverride();
     const params = new URLSearchParams({ _t: String(Date.now()) });
     if (facilityId) params.set('facility', facilityId);
-    return request<PortfolioBrief>(`/analysis/portfolio-brief?${params}`);
+    if (tenantOverride) params.set('tenantOverride', tenantOverride);
+    const url = `${API_BASE}/analysis/portfolio-brief?${params}`;
+    return new Promise<PortfolioBrief>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('GET', url, true);
+      xhr.withCredentials = true;
+      xhr.responseType = 'json';
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.response as PortfolioBrief);
+        } else {
+          const err = { status: xhr.status, title: xhr.statusText, detail: '' };
+          reject(err);
+        }
+      };
+      xhr.onerror = () => reject({ status: 0, title: 'network', detail: 'XHR onerror' });
+      xhr.ontimeout = () => reject({ status: 0, title: 'timeout', detail: 'XHR ontimeout' });
+      xhr.send();
+    });
   },
   generatePortfolioBrief: (facilityId?: string) => {
     const qs = facilityId ? `?facility=${encodeURIComponent(facilityId)}` : '';

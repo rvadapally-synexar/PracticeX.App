@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
   analysisApi,
+  getTenantOverride,
   type BatchExtractionResult,
   type Portfolio,
   type PortfolioBrief as PortfolioBriefDto,
@@ -540,10 +541,49 @@ function InsightsPanel({ insights }: { insights: PortfolioInsights }) {
 type BriefState =
   | { kind: 'loading' }
   | { kind: 'absent' }
-  | { kind: 'error' }
+  | { kind: 'error'; errDetail?: string }
   | { kind: 'ready'; brief: PortfolioBriefDto };
 
 function PortfolioBriefSection() {
+  // Brief loads via <iframe src="/brief-html">. iframes use top-level
+  // navigation semantics — the exact mechanism that works reliably on
+  // iPad Chrome 148 (where fetch() to /api/analysis/portfolio-brief
+  // throws "TypeError: Load failed" no matter how we configure it).
+  // The /brief-html Pages Function fetches the brief, renders the
+  // markdown to styled HTML server-side, and returns it; the iframe
+  // displays it directly with no client-side fetch involved.
+  const [searchParams] = useSearchParams();
+  const facilityFilter = searchParams.get('facility');
+  const tenantOverride = getTenantOverride();
+  const iframeParams = new URLSearchParams();
+  if (facilityFilter) iframeParams.set('facility', facilityFilter);
+  if (tenantOverride) iframeParams.set('tenantOverride', tenantOverride);
+  const iframeSrc = '/brief-html' + (iframeParams.toString() ? `?${iframeParams}` : '');
+
+  return (
+    <section className="portfolio-brief-card">
+      <Card eyebrow="Premium · Cross-document synthesis" title="Practice Intelligence Brief">
+        <iframe
+          src={iframeSrc}
+          style={{
+            width: '100%',
+            height: 'min(85vh, 1200px)',
+            border: 'none',
+            background: 'transparent',
+            display: 'block',
+          }}
+          title="Practice Intelligence Brief"
+        />
+      </Card>
+    </section>
+  );
+}
+
+// Legacy fetch-based brief section kept for reference. Replaced by
+// the iframe version above to bypass iPad Chrome's fetch bug.
+// @ts-expect-error unused — kept for reference
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function PortfolioBriefSection_LegacyFetch() {
   const [state, setState] = useState<BriefState>({ kind: 'loading' });
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
@@ -566,8 +606,22 @@ function PortfolioBriefSection() {
         // Anything else is a workspace-down condition; show the calm
         // placeholder.
         const status = (err as { status?: number } | undefined)?.status;
-        if (status === 404) setState({ kind: 'absent' });
-        else setState({ kind: 'error' });
+        if (status === 404) {
+          setState({ kind: 'absent' });
+        } else {
+          // Capture the actual error so we can see it in the maintenance
+          // card. On iOS WebKit the fetch can throw a TypeError ("Load
+          // failed") with no status — that's the signature we need to
+          // surface to diagnose the iPad-only brief failures.
+          const e = err as { status?: number; name?: string; message?: string; detail?: string };
+          const parts: string[] = [];
+          if (e.status) parts.push('status=' + e.status);
+          if (e.name) parts.push(e.name);
+          if (e.message) parts.push(e.message);
+          if (e.detail) parts.push(e.detail);
+          if (!parts.length) parts.push(String(err));
+          setState({ kind: 'error', errDetail: parts.join(' | ') });
+        }
       }
     })();
     return () => {
@@ -635,6 +689,15 @@ function PortfolioBriefSection() {
             body="The cross-document synthesis is regenerating. It will reappear here as soon as the workspace is back online."
             onRetry={() => setReloadKey((k) => k + 1)}
           />
+          {/* DIAGNOSTIC: surface the underlying fetch error so iPad-only
+              failures can actually be debugged. Remove once root-cause is
+              fixed. */}
+          {state.errDetail ? (
+            <div style={{ marginTop: 12, padding: 10, background: '#fff5f5', border: '1px solid #fbb', borderRadius: 6, fontFamily: 'monospace', fontSize: 11 }}>
+              <div style={{ fontWeight: 600, color: '#a00' }}>DEBUG: brief fetch error detail</div>
+              <div style={{ wordBreak: 'break-all' }}>{state.errDetail}</div>
+            </div>
+          ) : null}
         </Card>
       </section>
     );
